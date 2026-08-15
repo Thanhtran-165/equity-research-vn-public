@@ -6,10 +6,8 @@ requirements:
   failure_mode: FM-06
   case_ref: LC-006
   verification:
-    method: command
-    command: python3 -c "from vnstock_data import Finance; print('OK')" 2>/dev/null | grep -q OK
-    expect_exit: 0
-  fix_hint: pip3 install 'vnstock==3.5.1' --break-system-packages
+    method: sponsor_import_check
+  fix_hint: 'Cài/đăng nhập vnstock Sponsor theo README.md trong đúng virtualenv; không cài global.'
 - id: REQ-002
   text: 'Sponsor data phải trả ≥20 kỳ trên CẢ 3 báo cáo (income_statement + balance_sheet + cash_flow, không phải community 8 kỳ). (G11: trước chỉ check income_statement.)'
   type: mandatory
@@ -17,10 +15,9 @@ requirements:
   failure_mode: FM-02
   case_ref: LC-006
   verification:
-    method: command
-    command: python3 -c "import warnings; warnings.filterwarnings('ignore'); from vnstock_data import Finance; f=Finance(symbol='$TICKER',source='VCI'); print(len(f.income_statement()), len(f.balance_sheet()), len(f.cash_flow()))" 2>/dev/null | grep -E '^[0-9]+ [0-9]+ [0-9]+$' | tail -1
+    method: sponsor_period_check
     expect_min: 20
-  fix_hint: 'Downgrade vnstock: pip3 install ''vnstock==3.5.1'''
+  fix_hint: 'Kiểm tra source-pack và cài phiên bản vnstock Sponsor hiện hành theo README; không downgrade để né schema mới.'
 - id: REQ-003
   text: Audit split (Bẫy 5B) trước khi tính EPS/PE/PB. Back-calc CP = LNST/EPS từng năm.
   type: mandatory

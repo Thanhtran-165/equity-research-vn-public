@@ -10,6 +10,9 @@ Usage: python3 build_report.py <TICKER> [SECTOR]
 import sys, json, os, re, statistics, traceback, subprocess, math, tempfile
 from datetime import datetime, timedelta
 
+from runtime_environment import SponsorDependencyError, raise_sponsor_dependency
+from statement_adapter import annual_rows, combine_statements
+
 TICKER = sys.argv[1]
 SECTOR = sys.argv[2] if len(sys.argv) > 2 else 'general'
 SKILL_DIR = os.path.abspath(os.environ.get(
@@ -154,19 +157,34 @@ def CANVAS(cid, h=280, label=None):
 # ============ FETCH ============
 def fetch():
     import pandas as pd, numpy as np
-    from vnstock_data import Finance, Quote
-    f = Finance(source='VCI', symbol=TICKER)
-    inc = f.income_statement(); bal = f.balance_sheet(); cf = f.cash_flow()
-    inc.to_csv(f'{WORK}/source-pack/income_statement_sponsor.csv')
-    bal.to_csv(f'{WORK}/source-pack/balance_sheet_sponsor.csv')
-    cf.to_csv(f'{WORK}/source-pack/cash_flow_sponsor.csv')
-    def a5(df):
-        df = df[df.index.str.match(r'^20\d\d$')]
-        return df.sort_index().tail(5)
+    try:
+        from vnstock_data import Fundamental, Quote
+    except (ImportError, ModuleNotFoundError) as exc:
+        raise_sponsor_dependency(exc)
+
+    # Unified UI 3.2.7 trả period theo cột và field dạng slug. Lấy riêng quý/năm,
+    # sau đó chuẩn hóa về contract nội bộ đã kiểm định. Không pin ngược 3.0.0 và
+    # không suy diễn vị trí index của payload nhà cung cấp.
+    try:
+        equity_api = Fundamental().equity(TICKER)
+        def _statement(name, period):
+            return getattr(equity_api, name)(period=period, lang='en')
+        inc = combine_statements(_statement('income_statement', 'quarter'),
+                                 _statement('income_statement', 'year'), 'income')
+        bal = combine_statements(_statement('balance_sheet', 'quarter'),
+                                 _statement('balance_sheet', 'year'), 'balance')
+        cf = combine_statements(_statement('cash_flow', 'quarter'),
+                                _statement('cash_flow', 'year'), 'cash_flow')
+    except (ImportError, ModuleNotFoundError) as exc:
+        raise_sponsor_dependency(exc)
+
+    inc.to_csv(f'{WORK}/source-pack/income_statement_sponsor.csv', index_label='period')
+    bal.to_csv(f'{WORK}/source-pack/balance_sheet_sponsor.csv', index_label='period')
+    cf.to_csv(f'{WORK}/source-pack/cash_flow_sponsor.csv', index_label='period')
     # Financial statements do not always expose the same annual rows.  The report
     # is anchored on years that exist in both income and balance statements;
     # cash-flow values are optional and are aligned by year (never by list index).
-    inc_a=a5(inc); bal_a=a5(bal); cf_a=a5(cf)
+    inc_a=annual_rows(inc).tail(5); bal_a=annual_rows(bal).tail(5); cf_a=annual_rows(cf).tail(5)
     common_years=sorted(set(inc_a.index) & set(bal_a.index))[-5:]
     if not common_years:
         raise ValueError("no common annual income/balance years")
@@ -968,7 +986,8 @@ try:
     print(f'  DATA: pe={D["pe"]}, pb={D["pb"]}, mcap={D["marketCap"]} tỷ, capex_arr={len(D.get("capex",[]))}')
     task_state(D,cagr,roe_hist,cp_back,cp_consistent,news)
     out=render(D,cagr,npat_growth,roe_hist,cp_back,cp_consistent,graham,pe5med,news)
-    r=subprocess.run(['python3',os.path.expanduser('~/.zcode/skills/equity-research-vn/scripts/independent_verifier.py'),TICKER,out],capture_output=True,text=True)
+    verifier_path = os.path.join(SKILL_DIR, 'scripts', 'independent_verifier.py')
+    r=subprocess.run([sys.executable, verifier_path, TICKER, out],capture_output=True,text=True)
     o=r.stdout+r.stderr
     m=re.search(r'Requirements:\s*(\d+)/(\d+) pass',o)
     recall=int(m.group(1)) if m else 0
@@ -997,6 +1016,9 @@ try:
     if fails and any(f in ('REQ-021','REQ-024','REQ-062') for f in fails):
         print(f'  GATE: FAIL — {TICKER} còn fail critical ({fails}) — exit 1')
         sys.exit(1)
+except SponsorDependencyError as e:
+    print(f'ERROR {TICKER}: {e}', file=sys.stderr)
+    sys.exit(2)
 except Exception as e:
     traceback.print_exc()
     print(f'ERROR {TICKER}: {e}')

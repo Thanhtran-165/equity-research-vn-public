@@ -39,9 +39,12 @@ def make_stub_skill(root: Path) -> None:
     )
     requirements = root / "requirements.yaml"
     requirements.write_text("requirements: []\n")
+    adapter = scripts / "statement_adapter.py"
+    adapter.write_text("# frozen schema adapter\n")
     (root / ".verifier-hash").write_text(
         f"verifier_sha256={sha256(verifier)}\n"
         f"requirements_sha256={sha256(requirements)}\n"
+        f"statement_adapter_sha256={sha256(adapter)}\n"
     )
 
 

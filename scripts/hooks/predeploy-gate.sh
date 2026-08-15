@@ -105,7 +105,7 @@ VERIFIER="$SKILL_ROOT/scripts/independent_verifier.py"
 HASH_FILE="$SKILL_ROOT/.verifier-hash"
 
 # ═══ TAMPER CHECK (Gap 1 fix) ═══
-# Verify verifier + requirements không bị sửa
+# Verify verifier + requirements + schema adapter không bị sửa
 if [ ! -f "$HASH_FILE" ]; then
     # W4 (Wave 4): thiếu hash = không thể phát hiện tamper → enforced fail-closed
     fail_closed "Thiếu $HASH_FILE — không kiểm tra được verifier bị sửa chưa"
@@ -117,6 +117,15 @@ if [ -f "$HASH_FILE" ]; then
     REQ_FILE_HASH="$SKILL_ROOT/requirements.yaml"
     CURRENT_R_HASH=$(shasum -a 256 "$REQ_FILE_HASH" 2>/dev/null | cut -d' ' -f1)
     EXPECTED_R_HASH=$(grep requirements_sha256 "$HASH_FILE" 2>/dev/null | cut -d= -f2)
+    ADAPTER_FILE="$SKILL_ROOT/scripts/statement_adapter.py"
+    CURRENT_A_HASH=$(shasum -a 256 "$ADAPTER_FILE" 2>/dev/null | cut -d' ' -f1)
+    EXPECTED_A_HASH=$(grep statement_adapter_sha256 "$HASH_FILE" 2>/dev/null | cut -d= -f2)
+    if [ -z "$EXPECTED_A_HASH" ] || [ ! -f "$ADAPTER_FILE" ]; then
+        fail_closed "Thiếu statement_adapter.py hoặc hash freeze — không kiểm tra được schema oracle"
+    elif [ "$CURRENT_A_HASH" != "$EXPECTED_A_HASH" ]; then
+        echo "🚨 TAMPER: statement_adapter.py hash mismatch (enforced → block)" >&2
+        if [ "$ROLLOUT_MODE" = "enforced" ]; then exit 2; fi
+    fi
     if [ -n "$EXPECTED_R_HASH" ] && [ "$CURRENT_R_HASH" != "$EXPECTED_R_HASH" ]; then
         echo "🚨 TAMPER: requirements.yaml hash mismatch (enforced → block)" >&2
         if [ "$ROLLOUT_MODE" = "enforced" ]; then exit 2; fi
@@ -140,7 +149,17 @@ if [ ! -f "$VERIFIER" ]; then
 fi
 
 # Chạy verifier
-VERIFIER_OUTPUT=$(python3 "$VERIFIER" "$TICKER" "$REPORT" 2>&1)
+PYTHON_BIN="${EQUITY_PYTHON:-}"
+if [ -z "$PYTHON_BIN" ] && [ -x "$HOME/.venv/equity-research-vn/bin/python" ]; then
+    PYTHON_BIN="$HOME/.venv/equity-research-vn/bin/python"
+fi
+if [ -z "$PYTHON_BIN" ]; then
+    PYTHON_BIN=$(command -v python3 || true)
+fi
+if [ -z "$PYTHON_BIN" ]; then
+    fail_closed "Không tìm thấy Python cho verifier; đặt EQUITY_PYTHON hoặc cài virtualenv theo README"
+fi
+VERIFIER_OUTPUT=$("$PYTHON_BIN" "$VERIFIER" "$TICKER" "$REPORT" 2>&1)
 VERIFIER_EXIT=$?
 
 # Parse recall + verdict + fails (P1-2: strip ANSI before grep; extract fail count not REQ id)

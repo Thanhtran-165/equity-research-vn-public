@@ -19,6 +19,11 @@ Exit code: 0 = all pass, 1 = any fail
 """
 import json, sys, os, re, shlex, subprocess, yaml, datetime, hashlib
 
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+from statement_adapter import annual_rows, normalize_statement
+
 TICKER = sys.argv[1] if len(sys.argv) > 1 else "UNKNOWN"
 REPORT = sys.argv[2] if len(sys.argv) > 2 else None
 SKILL_DIR = os.path.abspath(os.environ.get(
@@ -2769,6 +2774,48 @@ def verify_task_state_oracle(req, html):
     }
 
 
+def verify_sponsor_period_check(req, html):
+    """REQ-002: đếm contract source-pack, không phụ thuộc orientation API live."""
+    work = _work_dir()
+    rows = {
+        "income_statement": _csv_period_rows(os.path.join(work, "source-pack", "income_statement_sponsor.csv")),
+        "balance_sheet": _csv_period_rows(os.path.join(work, "source-pack", "balance_sheet_sponsor.csv")),
+        "cash_flow": _csv_period_rows(os.path.join(work, "source-pack", "cash_flow_sponsor.csv")),
+    }
+    missing = [name for name, count in rows.items() if count is None]
+    minimum = min((count for count in rows.values() if count is not None), default=None)
+    threshold = int(req.get("verification", {}).get("expect_min", 20))
+    issues = []
+    if missing:
+        issues.append(f"thiếu sponsor CSV: {missing}")
+    if minimum is None or minimum < threshold:
+        issues.append(f"min periods={minimum}, yêu cầu >= {threshold}")
+    return not issues, {"rows": rows, "minimum": minimum, "expect_min": threshold, "issues": issues}
+
+
+def verify_sponsor_import_check(req, html):
+    """REQ-001: import trong chính interpreter đang chạy verifier.
+
+    Không spawn ``python3`` theo PATH vì builder có thể được gọi bằng đường dẫn
+    tuyệt đối tới virtualenv trong HOME sạch.
+    """
+    try:
+        import vnstock_data
+        from vnstock_data import Fundamental
+        version = getattr(vnstock_data, "__version__", None)
+        return True, {
+            "python": sys.executable,
+            "vnstock_data_version": version,
+            "fundamental_api": bool(Fundamental),
+        }
+    except (ImportError, ModuleNotFoundError) as exc:
+        return False, {
+            "python": sys.executable,
+            "error": str(exc),
+            "fix": "Cài/đăng nhập vnstock Sponsor theo README.md trong cùng virtualenv",
+        }
+
+
 def verify_news_window(req, html):
     """REQ-041: News phải trong 30 ngày (news_digest.json hoặc date trong HTML).
 
@@ -4176,14 +4223,20 @@ def verify_data_provenance(req, html):
     import time as _time
 
     def _try_api_live():
-        from vnstock_data import Finance
-        fapi = Finance(source='VCI', symbol=TICKER)
+        from vnstock_data import Fundamental
+        fapi = Fundamental().equity(TICKER)
         # income statement → Net sales / Attributable to parent company / EPS basic
-        df = fapi.income_statement()
-        annual = df[df['report_period'] == 'year'] if 'report_period' in df.columns else df
-        col_map = {"revenue_ty": "Net sales", "npatmi_ty": "Attributable to parent company", "eps_vnd": "EPS basic"}
-        for fk, col in col_map.items():
-            resolved = _ci_find(list(annual.columns), col)
+        annual = annual_rows(normalize_statement(
+            fapi.income_statement(period='year', lang='en'), 'income'
+        ))
+        col_map = {
+            "revenue_ty": ("Net sales", "Total Operating Income"),
+            "npatmi_ty": ("Attributable to parent company", "Net profit/(loss) after tax"),
+            "eps_vnd": ("EPS basic (VND)", "EPS basic"),
+        }
+        for fk, candidates in col_map.items():
+            resolved = next((_ci_find(list(annual.columns), col) for col in candidates
+                             if _ci_find(list(annual.columns), col) is not None), None)
             if resolved is None:
                 continue
             allowed_years = _ground_truth_years(fk)
@@ -4201,8 +4254,9 @@ def verify_data_provenance(req, html):
             if best_val is not None:
                 api_spots[fk] = (best_val / (1e9 if fk != "eps_vnd" else 1), f"API vnstock live ({resolved} {best_yr})", 10 if fk != "eps_vnd" else 15, best_yr)
         # balance sheet → Total assets
-        bdf = fapi.balance_sheet()
-        bannual = bdf[bdf['report_period'] == 'year'] if 'report_period' in bdf.columns else bdf
+        bannual = annual_rows(normalize_statement(
+            fapi.balance_sheet(period='year', lang='en'), 'balance'
+        ))
         ta_col = _ci_find(list(bannual.columns), "Total assets")
         if ta_col is not None:
             allowed_years = _ground_truth_years("Total Assets")
@@ -5464,6 +5518,8 @@ METHODS = {
     "industry_claim_check": verify_industry_claim,
     "identity_check": verify_identity,
     "task_state_oracle_check": verify_task_state_oracle,
+    "sponsor_period_check": verify_sponsor_period_check,
+    "sponsor_import_check": verify_sponsor_import_check,
     "news_window_check": verify_news_window,
     "investment_amount_check": verify_investment_amount,
     "source_freshness_check": verify_source_freshness,

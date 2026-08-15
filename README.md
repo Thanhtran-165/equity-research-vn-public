@@ -18,7 +18,22 @@ source ~/.venv/equity-research-vn/bin/activate
 python3 -m pip install -r ~/.zcode/skills/equity-research-vn/requirements-runtime.txt
 ```
 
-Full builder sử dụng hệ sinh thái vnstock Sponsor (`vnstock_data`, `vnstock`, `vnstock_ta`). Hãy đăng nhập và cài các gói này theo tài liệu vnstock dành cho tài khoản của bạn.
+### Cài đặt Sponsor
+
+Full builder sử dụng hệ sinh thái vnstock Sponsor (`vnstock_data`, `vnstock`, `vnstock_ta`) và cố ý không fallback sang community tier. Cài trình cài đặt chính thức trong virtualenv:
+
+```bash
+python3 -m pip install --extra-index-url https://vnstocks.com/api/simple vnstock_installer
+vnstock-installer
+```
+
+Đăng nhập/cấp quyền theo giao diện vnstock, rồi xác nhận trong đúng virtualenv:
+
+```bash
+python3 -c "from vnstock_data import Fundamental; print('Sponsor OK')"
+```
+
+Nếu full builder báo thiếu dependency Sponsor, quay lại mục này. Không cài package vào Python hệ thống và không chép credential vào repository.
 
 ## Chạy
 
