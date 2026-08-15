@@ -1,0 +1,7 @@
+release: 3.2.0
+architecture: HYBRID_DETERMINISTIC_SHELL
+maturity: QUALIFIED_FOR_TESTED_SCOPE
+supersedes: 3.1.0
+incident_closed: ERVN-PERIOD-001
+release_date: 2026-08-15
+hardening_wave: V3+V4+V5+P0+P1 (76 REQ — runtime render, provenance, fail-closed oracles, sector/task-state binding và scalar accuracy)

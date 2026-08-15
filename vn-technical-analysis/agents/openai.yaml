@@ -1,0 +1,4 @@
+interface:
+  display_name: "VN Technical Analysis"
+  short_description: "Phân tích kỹ thuật VN 2 mode: ACTIVE (MA/RSI/MACD/Verdict) + PROFILE (28-block hồ sơ giá-khối lượng, phi-tư-vấn)"
+  default_prompt: "Phân tích kỹ thuật [TICKER] — mode ACTIVE (timing/verdict) hoặc mode PROFILE (hồ sơ/personality)"

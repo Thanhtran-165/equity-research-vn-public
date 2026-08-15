@@ -1,0 +1,4 @@
+interface:
+  display_name: "VN Financial Data Collector"
+  short_description: "Thu thập & cross-check BCTC VN từ Vietstock, CafeF, trang QHCD"
+  default_prompt: "Phân tích mã cổ phiếu [TICKER] — thu thập data 5 năm từ 3 nguồn"

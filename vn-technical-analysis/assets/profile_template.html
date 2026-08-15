@@ -1,0 +1,2031 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{TICKER}} · Hồ sơ cổ phiếu (mode PROFILE)</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!-- ===== VIZ DESIGN TOKENS + COMPONENTS (inlined từ _viz-shared/ by inject.py) ===== -->
+<style>
+/* =========================================================================
+   VIZ DESIGN TOKENS — single source of truth
+   Trước đây: :root block này bị copy-paste 4 lần (dashboard, technical,
+   profile, news templates) → mỗi lần sửa palette phải sửa 4 nơi.
+   Giờ: sửa 1 lần tại đây, chạy `inject.py` để inline vào mọi template.
+
+   THEME SWITCHING: thêm `data-theme="bloomberg"` hoặc `data-theme="corporate"`
+   lên thẻ <html>. Mặc định (không có data-theme) = Fintech.
+   ========================================================================= */
+
+:root {
+  /* --- Background layers --- */
+  --bg-0: #0a0a14;
+  --bg-1: #10101f;
+  --bg-2: #16162a;
+  --card: rgba(28,28,48,0.55);
+  --card-solid: #1a1a2e;
+
+  /* --- Borders --- */
+  --border: rgba(139,92,246,0.18);
+  --border-hot: rgba(236,72,153,0.35);
+
+  /* --- Text --- */
+  --text: #f0f0ff;
+  --text-dim: #8b8ba7;
+  --text-faint: #5a5a72;
+
+  /* --- Accents (neon) --- */
+  --purple: #a855f7;
+  --purple-2: #8b5cf6;
+  --pink: #ec4899;
+  --cyan: #06b6d4;
+  --green: #10d98a;
+  --green-soft: rgba(16,217,138,0.15);
+  --red: #ff4d6d;
+  --red-soft: rgba(255,77,109,0.15);
+  --amber: #fbbf24;
+
+  /* --- Gradients --- */
+  --grad-main: linear-gradient(135deg, #a855f7 0%, #ec4899 100%);
+  --grad-cool: linear-gradient(135deg, #06b6d4 0%, #8b5cf6 100%);
+  --grad-bg: radial-gradient(ellipse at 20% 0%, rgba(139,92,246,0.15) 0%, transparent 50%),
+             radial-gradient(ellipse at 80% 100%, rgba(236,72,153,0.12) 0%, transparent 50%);
+
+  /* --- Typography --- */
+  --font-sans: 'Inter', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* --- Radius --- */
+  --radius-card: 24px;
+  --radius-pill: 999px;
+
+  /* --- Chart palette (for Chart.js — map token colors) --- */
+  --chart-primary: #a855f7;
+  --chart-secondary: #ec4899;
+  --chart-tertiary: #06b6d4;
+  --chart-pos: #10d98a;
+  --chart-neg: #ff4d6d;
+  --chart-neutral: #fbbf24;
+  --chart-grid: rgba(139,92,246,0.06);
+  --chart-text: #8b8ba7;
+}
+
+/* =========================================================================
+   VARIANT 2: Bloomberg Terminal — analyst chuyên nghiệp
+   Active: <html data-theme="bloomberg">
+   ========================================================================= */
+[data-theme="bloomberg"] {
+  --bg-0: #000000;
+  --bg-1: #0a0a0a;
+  --bg-2: #141414;
+  --card: rgba(20,20,20,0.85);
+  --card-solid: #141414;
+
+  --border: #333333;
+  --border-hot: #ffaa00;
+
+  --text: #ffaa00;            /* Bloomberg amber */
+  --text-dim: #888888;
+  --text-faint: #555555;
+
+  --purple: #ffaa00;
+  --pink: #ff6600;
+  --cyan: #00ccff;
+  --green: #00ff66;           /* terminal green */
+  --red: #ff3333;
+  --amber: #ffcc00;
+
+  --grad-main: linear-gradient(135deg, #ffaa00 0%, #ff6600 100%);
+  --grad-cool: linear-gradient(135deg, #00ccff 0%, #ffaa00 100%);
+  --grad-bg: none;            /* flat, no fancy gradients */
+
+  --font-sans: 'Courier New', monospace;
+  --font-mono: 'Courier New', monospace;
+
+  --radius-card: 4px;         /* sharper corners */
+
+  --chart-primary: #ffaa00;
+  --chart-secondary: #00ff66;
+  --chart-tertiary: #00ccff;
+  --chart-pos: #00ff66;
+  --chart-neg: #ff3333;
+  --chart-neutral: #ffcc00;
+  --chart-grid: rgba(255,170,0,0.08);
+  --chart-text: #888888;
+}
+
+/* =========================================================================
+   VARIANT 3: Corporate Sáng — quỹ đầu tư / PDF export
+   Active: <html data-theme="corporate">
+   ========================================================================= */
+[data-theme="corporate"] {
+  --bg-0: #f8f9fc;
+  --bg-1: #ffffff;
+  --bg-2: #edf2f7;
+  --card: #ffffff;
+  --card-solid: #ffffff;
+
+  --border: #e2e8f0;
+  --border-hot: #2c5282;
+
+  --text: #1a202c;
+  --text-dim: #4a5568;
+  --text-faint: #a0aec0;
+
+  --purple: #1a365d;          /* navy */
+  --purple-2: #2c5282;
+  --pink: #c53030;
+  --cyan: #2c7a7b;
+  --green: #2f855a;
+  --red: #c53030;
+  --amber: #c05621;
+
+  --grad-main: linear-gradient(135deg, #1a365d 0%, #2c5282 100%);
+  --grad-cool: linear-gradient(135deg, #2c7a7b 0%, #2c5282 100%);
+  --grad-bg: none;
+
+  --radius-card: 12px;
+
+  --chart-primary: #1a365d;
+  --chart-secondary: #2c5282;
+  --chart-tertiary: #2c7a7b;
+  --chart-pos: #2f855a;
+  --chart-neg: #c53030;
+  --chart-neutral: #c05621;
+  --chart-grid: rgba(26,54,93,0.06);
+  --chart-text: #4a5568;
+}
+
+/* =========================================================================
+   VIZ COMPONENTS — shared UI classes
+   Trích xuất từ dashboard/technical/profile/news templates (đã trùng lặp 4 lần).
+
+   Components reference tokens từ tokens.css (never hardcode colors).
+   Mỗi component = self-contained block, có thể chọn lọc include.
+   ========================================================================= */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  background: var(--bg-0);
+  color: var(--text);
+  font-family: var(--font-sans);
+  line-height: 1.5;
+  overflow-x: hidden;
+}
+
+body {
+  background-image: var(--grad-bg);
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+.container { max-width: 1480px; margin: 0 auto; padding: 24px 32px 80px; }
+
+/* --- Semantic color classes --- */
+.pos { color: var(--green); }
+.neg { color: var(--red); }
+.neu { color: var(--amber); }
+
+/* =========================================================================
+   HERO
+   ========================================================================= */
+.hero {
+  background: linear-gradient(135deg, rgba(168,85,247,0.12), rgba(236,72,153,0.08));
+  border: 1px solid var(--border);
+  border-radius: 32px;
+  padding: 40px 44px;
+  margin-bottom: 28px;
+  position: relative;
+  overflow: hidden;
+  backdrop-filter: blur(20px);
+}
+.hero::before {
+  content: '';
+  position: absolute;
+  top: -100px; right: -50px;
+  width: 400px; height: 400px;
+  background: radial-gradient(circle, rgba(236,72,153,0.25), transparent 70%);
+  filter: blur(40px);
+  pointer-events: none;
+}
+.hero-top {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 24px; flex-wrap: wrap;
+  position: relative; z-index: 2;
+}
+.ticker-badge {
+  display: inline-flex; align-items: center; gap: 10px;
+  background: var(--grad-main); color: #fff;
+  padding: 6px 16px; border-radius: var(--radius-pill);
+  font-weight: 700; font-size: 13px; letter-spacing: 0.5px;
+  box-shadow: 0 8px 24px rgba(168,85,247,0.4);
+}
+.update-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: rgba(16,217,138,0.15); color: var(--green);
+  padding: 4px 12px; border-radius: var(--radius-pill);
+  font-weight: 600; font-size: 11px;
+  border: 1px solid rgba(16,217,138,0.3);
+  margin-left: 8px; vertical-align: middle;
+}
+.company-name {
+  font-size: 42px; font-weight: 800; margin-top: 14px;
+  letter-spacing: -1px;
+  background: linear-gradient(90deg, #fff, #c4b5fd);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.company-sub { color: var(--text-dim); margin-top: 6px; font-size: 15px; }
+.price-block { text-align: right; }
+.price-now { font-size: 52px; font-weight: 800; letter-spacing: -1.5px; }
+.price-now .ccy { font-size: 22px; color: var(--text-dim); font-weight: 500; margin-right: 6px; }
+.price-unit { font-size: 14px; color: var(--text-faint); font-weight: 400; }
+.price-meta { margin-top: 8px; color: var(--text-dim); font-size: 13px; }
+
+/* --- KPI strip (6 cards under hero) --- */
+.kpi-strip {
+  display: grid; grid-template-columns: repeat(6, 1fr);
+  gap: 14px; margin-top: 32px;
+  position: relative; z-index: 2;
+}
+.kpi {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px; padding: 18px;
+  backdrop-filter: blur(12px);
+  transition: transform .25s, border-color .25s;
+}
+.kpi:hover { transform: translateY(-3px); border-color: var(--border-hot); }
+.kpi-label {
+  font-size: 11px; color: var(--text-faint);
+  text-transform: uppercase; letter-spacing: 1px; font-weight: 600;
+}
+.kpi-value { font-size: 24px; font-weight: 700; margin-top: 6px; }
+.kpi-delta { font-size: 12px; margin-top: 4px; font-weight: 600; }
+
+/* =========================================================================
+   SECTION TITLES
+   ========================================================================= */
+.section-title {
+  display: flex; align-items: center; gap: 12px;
+  margin: 44px 0 20px;
+}
+.section-title h2 { font-size: 24px; font-weight: 700; letter-spacing: -0.5px; }
+.section-title .tag {
+  font-size: 11px; font-weight: 700; letter-spacing: 1px;
+  text-transform: uppercase; padding: 4px 10px;
+  border-radius: 6px; color: #fff;
+}
+.tag.purple { background: var(--purple); }
+.tag.pink   { background: var(--pink); }
+.tag.cyan   { background: var(--cyan); color: #000; }
+.tag.amber  { background: var(--amber); color: #000; }
+.tag.green  { background: var(--green); color: #000; }
+.divider-line { flex: 1; height: 1px; background: linear-gradient(90deg, var(--border), transparent); }
+
+/* =========================================================================
+   GRID LAYOUTS
+   ========================================================================= */
+.grid-2   { display: grid; grid-template-columns: 1fr 1fr;          gap: 20px; }
+.grid-3   { display: grid; grid-template-columns: repeat(3, 1fr);   gap: 20px; }
+.grid-2-1 { display: grid; grid-template-columns: 2fr 1fr;          gap: 20px; }
+.grid-1-2 { display: grid; grid-template-columns: 1fr 2fr;          gap: 20px; }
+
+/* =========================================================================
+   CARD
+   ========================================================================= */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: 24px;
+  backdrop-filter: blur(14px);
+  position: relative; overflow: hidden;
+}
+.card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.card-title { font-size: 15px; font-weight: 600; color: var(--text); }
+.card-sub { font-size: 12px; color: var(--text-faint); margin-top: 2px; }
+.chart-wrap { position: relative; height: 280px; }
+.chart-wrap.sm { height: 220px; }
+.chart-wrap.lg { height: 340px; }
+
+/* =========================================================================
+   FINANCIAL TABLE
+   ========================================================================= */
+.fin-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.fin-table th {
+  text-align: right; padding: 12px 10px;
+  color: var(--text-faint); font-weight: 600; font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border);
+}
+.fin-table th:first-child { text-align: left; }
+.fin-table td {
+  padding: 12px 10px; text-align: right;
+  border-bottom: 1px solid rgba(139,92,246,0.08);
+}
+.fin-table td:first-child { text-align: left; color: var(--text-dim); font-weight: 500; }
+.fin-table tbody tr:hover { background: rgba(168,85,247,0.05); }
+.fin-table .row-strong td { font-weight: 700; color: var(--text); background: rgba(168,85,247,0.06); }
+.fin-table .row-strong td:first-child { color: var(--purple); }
+.fin-table .col-latest { background: rgba(16,217,138,0.06); font-weight: 700; }
+
+/* =========================================================================
+   VALUATION CARDS (5-scenario grid)
+   ========================================================================= */
+.val-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+.val-card {
+  border-radius: 18px; padding: 18px; text-align: center;
+  position: relative; overflow: hidden;
+  border: 1px solid var(--border);
+  background: rgba(20,20,40,0.4);
+}
+.val-card .name { font-size: 11px; color: var(--text-faint); font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; }
+.val-card .price { font-size: 26px; font-weight: 800; margin-top: 8px; }
+.val-card .price small { font-size: 13px; color: var(--text-dim); font-weight: 500; }
+.val-card .upside { font-size: 12px; margin-top: 6px; font-weight: 700; }
+.val-card.base { background: linear-gradient(135deg, rgba(168,85,247,0.25), rgba(236,72,153,0.15)); border-color: var(--border-hot); }
+.val-card.base::after {
+  content: 'KHUYẾN NGHỊ'; position: absolute; top: 8px; right: 8px;
+  font-size: 8px; font-weight: 800; background: var(--grad-main);
+  padding: 2px 6px; border-radius: 4px; letter-spacing: 0.5px;
+}
+.bar-track { height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; margin-top: 10px; overflow: hidden; }
+.bar-fill  { height: 100%; border-radius: 3px; background: var(--grad-main); }
+
+/* =========================================================================
+   GAUGE (fair value verdict)
+   ========================================================================= */
+.gauge-wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; }
+.gauge-num {
+  font-size: 64px; font-weight: 900; letter-spacing: -2px;
+  background: var(--grad-main);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+}
+.gauge-label { color: var(--text-dim); font-size: 13px; margin-top: 4px; }
+.gauge-verdict { margin-top: 18px; padding: 8px 20px; border-radius: var(--radius-pill); font-weight: 700; font-size: 14px; background: var(--green); color: #000; }
+
+/* =========================================================================
+   INSIGHT CARDS (special insights section)
+   ========================================================================= */
+.insight-card {
+  background: linear-gradient(135deg, rgba(6,182,212,0.08), rgba(139,92,246,0.06));
+  border: 1px solid rgba(6,182,212,0.2);
+  border-radius: 20px; padding: 22px;
+  position: relative; overflow: hidden;
+}
+.insight-card .ico {
+  width: 42px; height: 42px; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; margin-bottom: 12px;
+  background: var(--grad-cool);
+}
+.insight-card h4 { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+.insight-card p  { font-size: 13px; color: var(--text-dim); line-height: 1.6; }
+.insight-card .metric { display: flex; gap: 16px; margin-top: 14px; flex-wrap: wrap; }
+.insight-card .metric div { flex: 1; min-width: 80px; }
+.insight-card .metric .v { font-size: 18px; font-weight: 700; }
+.insight-card .metric .l { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* --- Rating dots --- */
+.rating-row { display: flex; align-items: center; gap: 14px; padding: 14px 0; border-bottom: 1px solid rgba(139,92,246,0.08); }
+.rating-row:last-child { border-bottom: none; }
+.rating-row .cat { flex: 1; font-size: 13px; color: var(--text-dim); }
+.dots { display: flex; gap: 4px; }
+.dot  { width: 11px; height: 11px; border-radius: 50%; background: rgba(255,255,255,0.1); }
+.dot.on { background: var(--grad-main); }
+
+/* =========================================================================
+   EXECUTIVE SUMMARY
+   ========================================================================= */
+.exec-summary {
+  background: linear-gradient(135deg, rgba(168,85,247,0.15), rgba(236,72,153,0.1));
+  border: 1px solid var(--border-hot);
+  border-radius: var(--radius-card); padding: 28px 32px;
+  margin-bottom: 24px;
+  backdrop-filter: blur(14px);
+  position: relative; overflow: hidden;
+}
+.exec-summary::before {
+  content: ''; position: absolute; top: -80px; right: -30px;
+  width: 300px; height: 300px;
+  background: radial-gradient(circle, rgba(168,85,247,0.18), transparent 70%);
+  filter: blur(30px);
+}
+.exec-label {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 11px; font-weight: 700; letter-spacing: 1.5px;
+  text-transform: uppercase; color: var(--purple);
+  background: rgba(168,85,247,0.15); padding: 5px 12px;
+  border-radius: 6px; margin-bottom: 14px;
+  position: relative; z-index: 2;
+}
+.exec-title { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 12px; line-height: 1.3; position: relative; z-index: 2; }
+.exec-body { font-size: 14px; color: var(--text-dim); line-height: 1.7; margin-bottom: 18px; position: relative; z-index: 2; }
+.exec-body strong { color: var(--text); font-weight: 600; }
+.exec-body .up   { color: var(--green); font-weight: 700; }
+.exec-body .down { color: var(--red);   font-weight: 700; }
+.exec-highlights { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; position: relative; z-index: 2; }
+.exec-hl { background: rgba(20,20,40,0.6); border: 1px solid var(--border); border-radius: 14px; padding: 14px; text-align: center; }
+.exec-hl.pos { border-color: rgba(16,217,138,0.3); }
+.exec-hl.neg { border-color: rgba(255,77,109,0.3); }
+.exec-hl.neu { border-color: rgba(251,191,36,0.3); }
+.exec-hl-lbl { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+.exec-hl-val { font-size: 20px; font-weight: 800; margin-top: 4px; font-family: var(--font-mono); }
+.exec-hl-sub { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+
+/* =========================================================================
+   NEWS CARDS
+   ========================================================================= */
+.news-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px; padding: 22px;
+  backdrop-filter: blur(14px);
+  position: relative;
+  transition: transform .25s, border-color .25s;
+  overflow: hidden;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.news-card:hover { transform: translateY(-3px); }
+.news-card.positive { border-left: 4px solid var(--green); }
+.news-card.positive:hover { border-color: var(--green); }
+.news-card.negative { border-left: 4px solid var(--red); }
+.news-card.negative:hover { border-color: var(--red); }
+.news-card.neutral { border-left: 4px solid var(--amber); }
+.news-card.neutral:hover { border-color: var(--amber); }
+.news-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.news-cat { font-size: 10px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; padding: 3px 8px; border-radius: 5px; }
+.news-cat.biz        { background: rgba(16,217,138,0.2); color: var(--green); }
+.news-cat.sector     { background: rgba(168,85,247,0.2); color: var(--purple); }
+.news-cat.macro      { background: rgba(251,191,36,0.2); color: var(--amber); }
+.news-cat.disclosure { background: rgba(6,182,212,0.2); color: var(--cyan); }
+.news-cat.analyst    { background: rgba(236,72,153,0.2); color: var(--pink); }
+.news-date { font-size: 11px; color: var(--text-faint); font-family: var(--font-mono); }
+.news-title { font-size: 15px; font-weight: 700; line-height: 1.4; }
+.news-summary { font-size: 13px; color: var(--text-dim); line-height: 1.6; }
+.news-metrics { display: flex; gap: 10px; flex-wrap: wrap; margin: 2px 0; }
+.news-metric { flex: 1; min-width: 90px; background: rgba(255,255,255,0.04); border: 1px solid rgba(139,92,246,0.1); border-radius: 10px; padding: 8px 10px; }
+.news-metric .ml { font-size: 9px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+.news-metric .mv { font-size: 15px; font-weight: 700; margin-top: 2px; font-family: var(--font-mono); }
+.news-metric .mv.pos { color: var(--green); }
+.news-metric .mv.neg { color: var(--red); }
+.news-metric .mv.neu { color: var(--amber); }
+.news-why { background: rgba(168,85,247,0.06); border-left: 3px solid var(--purple); border-radius: 0 10px 10px 0; padding: 10px 14px; font-size: 12px; color: var(--text-dim); line-height: 1.55; }
+.news-why strong { color: var(--purple); font-weight: 600; }
+.news-impact { display: flex; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 1px solid rgba(139,92,246,0.1); margin-top: auto; }
+.sentiment-pill { font-size: 10px; font-weight: 700; padding: 3px 10px; border-radius: var(--radius-pill); text-transform: uppercase; letter-spacing: 0.5px; }
+.sentiment-pill.bullish { background: rgba(16,217,138,0.15); color: var(--green); border: 1px solid rgba(16,217,138,0.3); }
+.sentiment-pill.bearish { background: rgba(255,77,109,0.15); color: var(--red); border: 1px solid rgba(255,77,109,0.3); }
+.sentiment-pill.neutral { background: rgba(251,191,36,0.15); color: var(--amber); border: 1px solid rgba(251,191,36,0.3); }
+.impact-score { font-size: 11px; color: var(--text-faint); }
+.impact-score .v { font-weight: 700; color: var(--text); }
+.news-link { font-size: 11px; color: var(--purple); text-decoration: none; font-weight: 500; display: inline-flex; align-items: center; gap: 4px; }
+.news-link:hover { text-decoration: underline; }
+
+/* =========================================================================
+   SENTIMENT METER
+   ========================================================================= */
+.meter-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 24px; backdrop-filter: blur(14px); margin-bottom: 24px; }
+.meter-wrap { display: flex; align-items: center; gap: 32px; flex-wrap: wrap; }
+.meter-gauge { flex: 0 0 200px; text-align: center; }
+.meter-score { font-size: 64px; font-weight: 900; line-height: 1; background: var(--grad-main); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.meter-label { color: var(--text-dim); font-size: 12px; margin-top: 6px; }
+.meter-verdict { margin-top: 10px; padding: 6px 16px; border-radius: var(--radius-pill); font-weight: 700; font-size: 13px; background: var(--green); color: #000; display: inline-block; }
+.meter-breakdown { flex: 1; min-width: 280px; }
+.meter-bar { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+.meter-bar .lbl { font-size: 12px; width: 60px; color: var(--text-dim); }
+.meter-bar .track { flex: 1; height: 18px; background: rgba(255,255,255,0.06); border-radius: 9px; overflow: hidden; }
+.meter-bar .fill { height: 100%; border-radius: 9px; transition: width .8s ease; }
+.meter-bar .pct { font-size: 12px; font-weight: 700; width: 36px; text-align: right; }
+.news-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+
+/* =========================================================================
+   TIMELINE
+   ========================================================================= */
+.timeline-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 24px; backdrop-filter: blur(14px); }
+.timeline { position: relative; padding-left: 24px; }
+.timeline::before { content: ''; position: absolute; left: 8px; top: 8px; bottom: 8px; width: 2px; background: linear-gradient(180deg, var(--purple), var(--pink), var(--cyan)); }
+.tl-item { position: relative; margin-bottom: 18px; padding-left: 24px; }
+.tl-item::before { content: ''; position: absolute; left: -20px; top: 6px; width: 12px; height: 12px; border-radius: 50%; background: var(--card); border: 2px solid var(--purple); box-shadow: 0 0 0 3px rgba(168,85,247,0.2); }
+.tl-item.pos::before { border-color: var(--green); box-shadow: 0 0 0 3px rgba(16,217,138,0.2); }
+.tl-item.neg::before { border-color: var(--red); box-shadow: 0 0 0 3px rgba(255,77,109,0.2); }
+.tl-date { font-size: 11px; color: var(--text-faint); font-family: var(--font-mono); font-weight: 600; }
+.tl-text { font-size: 13px; color: var(--text); margin-top: 2px; }
+.tl-source { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+
+/* =========================================================================
+   KEY TAKEAWAYS
+   ========================================================================= */
+.takeaways { background: linear-gradient(135deg, rgba(168,85,247,0.12), rgba(6,182,212,0.06)); border: 1px solid var(--border-hot); border-radius: var(--radius-card); padding: 28px; margin-top: 24px; }
+.takeaway-item { display: flex; gap: 14px; padding: 14px 0; border-bottom: 1px solid rgba(139,92,246,0.1); }
+.takeaway-item:last-child { border-bottom: none; }
+.takeaway-num { flex: 0 0 32px; height: 32px; border-radius: 10px; background: var(--grad-main); display: flex; align-items: center; justify-content: center; font-weight: 800; color: #fff; font-size: 14px; }
+.takeaway-content h4 { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+.takeaway-content p { font-size: 13px; color: var(--text-dim); line-height: 1.6; }
+
+/* =========================================================================
+   TECHNICAL ANALYSIS COMPONENTS
+   ========================================================================= */
+.tech-verdict-card { background: linear-gradient(135deg, rgba(251,191,36,0.12), rgba(255,77,109,0.08)); border: 1px solid rgba(251,191,36,0.3); border-radius: var(--radius-card); padding: 28px; margin-bottom: 24px; backdrop-filter: blur(14px); }
+.tech-verdict-grid { display: grid; grid-template-columns: 1fr 2fr; gap: 24px; align-items: center; }
+.tech-score-big { font-size: 72px; font-weight: 900; line-height: 1; text-align: center; background: linear-gradient(135deg, #fbbf24, #ff4d6d); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.tech-score-lbl { font-size: 11px; color: var(--text-faint); text-align: center; margin-top: 4px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
+.tech-verdict-pill { margin-top: 10px; padding: 6px 16px; border-radius: var(--radius-pill); font-weight: 700; font-size: 13px; background: rgba(251,191,36,0.2); color: var(--amber); border: 1px solid rgba(251,191,36,0.4); display: inline-block; text-align: center; }
+.tech-indicators { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.tech-ind { background: rgba(20,20,40,0.6); border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
+.tech-ind-lbl { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+.tech-ind-val { font-size: 20px; font-weight: 800; margin-top: 4px; font-family: var(--font-mono); }
+.tech-ind-val.pos { color: var(--green); }
+.tech-ind-val.neg { color: var(--red); }
+.tech-ind-val.neu { color: var(--amber); }
+.tech-ind-sub { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+.signal-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-top: 16px; }
+.signal-cell { background: rgba(255,255,255,0.04); border: 1px solid var(--border); border-radius: 10px; padding: 10px; text-align: center; }
+.signal-cell.sell     { border-color: rgba(255,77,109,0.4); }
+.signal-cell.buy      { border-color: rgba(16,217,138,0.4); }
+.signal-cell.neutral  { border-color: rgba(251,191,36,0.4); }
+.signal-name { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+.signal-val { font-size: 14px; font-weight: 800; margin-top: 4px; }
+.signal-val.sell    { color: var(--red); }
+.signal-val.buy     { color: var(--green); }
+.signal-val.neutral { color: var(--amber); }
+.tech-chart-wrap { position: relative; height: 320px; margin-top: 16px; }
+
+/* =========================================================================
+   PROFILE MODE (non-advice)
+   ========================================================================= */
+.profile-read-card { background: linear-gradient(135deg, rgba(168,85,247,0.12), rgba(6,182,212,0.08)); border: 1px solid var(--border-hot); border-radius: var(--radius-card); padding: 28px 32px; margin-bottom: 24px; backdrop-filter: blur(14px); position: relative; overflow: hidden; }
+.profile-read-card::before { content: ''; position: absolute; top: -80px; right: -30px; width: 300px; height: 300px; background: radial-gradient(circle, rgba(168,85,247,0.18), transparent 70%); filter: blur(30px); }
+.read-label { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--purple); background: rgba(168,85,247,0.15); padding: 5px 12px; border-radius: 6px; margin-bottom: 14px; position: relative; z-index: 2; }
+.read-archetype { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 12px; line-height: 1.3; position: relative; z-index: 2; }
+.read-archetype .pill { font-size: 13px; font-weight: 700; padding: 4px 14px; border-radius: var(--radius-pill); margin-left: 10px; vertical-align: middle; }
+.read-archetype .pill.trend_following { background: rgba(6,182,212,0.2); color: var(--cyan); border: 1px solid rgba(6,182,212,0.4); }
+.read-archetype .pill.accumulation_breakout { background: rgba(139,92,246,0.2); color: var(--purple-2); border: 1px solid rgba(139,92,246,0.4); }
+.read-archetype .pill.trap_prone { background: rgba(255,77,109,0.2); color: var(--red); border: 1px solid rgba(255,77,109,0.4); }
+.read-archetype .pill.mixed, .read-archetype .pill.no_current_setup { background: rgba(251,191,36,0.2); color: var(--amber); border: 1px solid rgba(251,191,36,0.4); }
+.read-body { font-size: 14px; color: var(--text-dim); line-height: 1.7; margin-bottom: 18px; position: relative; z-index: 2; }
+.read-body strong { color: var(--text); font-weight: 600; }
+.archetype-icon { flex: 0 0 80px; height: 80px; border-radius: 20px; display: flex; align-items: center; justify-content: center; font-size: 36px; background: var(--grad-cool); box-shadow: 0 8px 24px rgba(6,182,212,0.3); }
+.profile-read-grid { display: grid; grid-template-columns: 80px 1fr; gap: 20px; align-items: center; position: relative; z-index: 2; }
+
+/* --- Callout (guardrail / non-conclusion) --- */
+.callout { border-radius: 14px; padding: 14px 18px; margin: 14px 0; font-size: 13px; line-height: 1.6; border-left: 4px solid var(--purple); background: rgba(168,85,247,0.06); }
+.callout h4 { font-size: 13px; font-weight: 700; margin-bottom: 6px; }
+.callout.warn { border-color: var(--red); background: rgba(255,77,109,0.06); }
+.callout.warn h4 { color: var(--red); }
+.callout.good { border-color: var(--green); background: rgba(16,217,138,0.06); }
+.callout.good h4 { color: var(--green); }
+.callout.info { border-color: var(--cyan); background: rgba(6,182,212,0.06); }
+.callout.info h4 { color: var(--cyan); }
+.callout ul { margin: 6px 0 0 18px; padding: 0; }
+
+/* =========================================================================
+   NAVIGATION BAR + SCROLL PROGRESS + BACK-TO-TOP
+   ========================================================================= */
+.topnav {
+  position: sticky; top: 0; z-index: 1000;
+  background: rgba(10,10,20,0.85);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(139,92,246,0.2);
+  padding: 0 16px;
+}
+.topnav-inner {
+  max-width: 1480px; margin: 0 auto;
+  display: flex; align-items: center; gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(139,92,246,0.3) transparent;
+}
+.topnav-inner::-webkit-scrollbar { height: 4px; }
+.topnav-inner::-webkit-scrollbar-thumb { background: rgba(139,92,246,0.3); border-radius: 2px; }
+.topnav-brand {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px 10px 0;
+  font-weight: 800; font-size: 13px; color: var(--purple);
+  white-space: nowrap;
+  border-right: 1px solid rgba(139,92,246,0.15);
+  margin-right: 6px;
+}
+.topnav-brand .dot-color { width: 8px; height: 8px; border-radius: 50%; background: var(--grad-main); }
+.topnav-link {
+  padding: 10px 12px; font-size: 12px; font-weight: 600;
+  color: var(--text-dim); text-decoration: none;
+  white-space: nowrap; border-radius: 8px;
+  transition: all .2s;
+  border-bottom: 2px solid transparent;
+}
+.topnav-link:hover { color: var(--text); background: rgba(139,92,246,0.08); }
+.topnav-link.active { color: var(--purple); border-bottom-color: var(--purple); background: rgba(168,85,247,0.1); }
+
+.progress-bar {
+  position: fixed; top: 0; left: 0; height: 3px;
+  background: var(--grad-main); width: 0; z-index: 1001;
+  transition: width .1s ease;
+  box-shadow: 0 0 12px rgba(168,85,247,0.6);
+}
+.back-top {
+  position: fixed; bottom: 24px; right: 24px;
+  width: 44px; height: 44px; border-radius: 50%;
+  background: var(--grad-main); color: #fff; border: none;
+  cursor: pointer; font-size: 18px;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 8px 24px rgba(168,85,247,0.4);
+  opacity: 0; transform: translateY(20px);
+  transition: all .3s; z-index: 999;
+}
+.back-top.visible { opacity: 1; transform: translateY(0); }
+.back-top:hover { transform: translateY(-3px) scale(1.05); }
+
+/* =========================================================================
+   FOOTER + DISCLAIMER
+   ========================================================================= */
+footer { margin-top: 60px; padding-top: 24px; border-top: 1px solid var(--border); color: var(--text-faint); font-size: 12px; text-align: center; line-height: 1.8; }
+footer a { color: var(--purple); text-decoration: none; }
+.disclaimer {
+  background: rgba(251,191,36,0.06);
+  border: 1px solid rgba(251,191,36,0.2);
+  border-radius: 14px; padding: 14px 18px;
+  margin-top: 24px; font-size: 12px; color: var(--text-dim);
+}
+
+/* =========================================================================
+   ANIMATIONS
+   ========================================================================= */
+@keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+.fade { animation: fadeUp .6s ease both; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+.live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--green); margin-right: 6px; animation: pulse 1.5s infinite; }
+
+/* =========================================================================
+   RESPONSIVE
+   ========================================================================= */
+@media (max-width: 1100px) {
+  .kpi-strip { grid-template-columns: repeat(3, 1fr); }
+  .grid-2, .grid-3, .grid-2-1, .grid-1-2 { grid-template-columns: 1fr; }
+  .val-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 600px) {
+  .container { padding: 16px; }
+  .hero { padding: 24px; border-radius: 20px; }
+  .company-name { font-size: 30px; }
+  .price-now { font-size: 38px; }
+  .kpi-strip { grid-template-columns: repeat(2, 1fr); }
+  .val-grid { grid-template-columns: 1fr 1fr; }
+  .topnav-brand { display: none; }
+  .topnav-link { padding: 8px 10px; font-size: 11px; }
+  .profile-read-grid { grid-template-columns: 1fr; }
+  .archetype-icon { margin: 0 auto; }
+}
+
+</style>
+<style>
+/* Profile-specific overrides only (tất cả tokens + components đến từ _viz-shared via <!-- ===== VIZ DESIGN TOKENS + COMPONENTS (inlined từ _viz-shared/ by inject.py) ===== -->
+<style>
+/* =========================================================================
+   VIZ DESIGN TOKENS — single source of truth
+   Trước đây: :root block này bị copy-paste 4 lần (dashboard, technical,
+   profile, news templates) → mỗi lần sửa palette phải sửa 4 nơi.
+   Giờ: sửa 1 lần tại đây, chạy `inject.py` để inline vào mọi template.
+
+   THEME SWITCHING: thêm `data-theme="bloomberg"` hoặc `data-theme="corporate"`
+   lên thẻ <html>. Mặc định (không có data-theme) = Fintech.
+   ========================================================================= */
+
+:root {
+  /* --- Background layers --- */
+  --bg-0: #0a0a14;
+  --bg-1: #10101f;
+  --bg-2: #16162a;
+  --card: rgba(28,28,48,0.55);
+  --card-solid: #1a1a2e;
+
+  /* --- Borders --- */
+  --border: rgba(139,92,246,0.18);
+  --border-hot: rgba(236,72,153,0.35);
+
+  /* --- Text --- */
+  --text: #f0f0ff;
+  --text-dim: #8b8ba7;
+  --text-faint: #5a5a72;
+
+  /* --- Accents (neon) --- */
+  --purple: #a855f7;
+  --purple-2: #8b5cf6;
+  --pink: #ec4899;
+  --cyan: #06b6d4;
+  --green: #10d98a;
+  --green-soft: rgba(16,217,138,0.15);
+  --red: #ff4d6d;
+  --red-soft: rgba(255,77,109,0.15);
+  --amber: #fbbf24;
+
+  /* --- Gradients --- */
+  --grad-main: linear-gradient(135deg, #a855f7 0%, #ec4899 100%);
+  --grad-cool: linear-gradient(135deg, #06b6d4 0%, #8b5cf6 100%);
+  --grad-bg: radial-gradient(ellipse at 20% 0%, rgba(139,92,246,0.15) 0%, transparent 50%),
+             radial-gradient(ellipse at 80% 100%, rgba(236,72,153,0.12) 0%, transparent 50%);
+
+  /* --- Typography --- */
+  --font-sans: 'Inter', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* --- Radius --- */
+  --radius-card: 24px;
+  --radius-pill: 999px;
+
+  /* --- Chart palette (for Chart.js — map token colors) --- */
+  --chart-primary: #a855f7;
+  --chart-secondary: #ec4899;
+  --chart-tertiary: #06b6d4;
+  --chart-pos: #10d98a;
+  --chart-neg: #ff4d6d;
+  --chart-neutral: #fbbf24;
+  --chart-grid: rgba(139,92,246,0.06);
+  --chart-text: #8b8ba7;
+}
+
+/* =========================================================================
+   VARIANT 2: Bloomberg Terminal — analyst chuyên nghiệp
+   Active: <html data-theme="bloomberg">
+   ========================================================================= */
+[data-theme="bloomberg"] {
+  --bg-0: #000000;
+  --bg-1: #0a0a0a;
+  --bg-2: #141414;
+  --card: rgba(20,20,20,0.85);
+  --card-solid: #141414;
+
+  --border: #333333;
+  --border-hot: #ffaa00;
+
+  --text: #ffaa00;            /* Bloomberg amber */
+  --text-dim: #888888;
+  --text-faint: #555555;
+
+  --purple: #ffaa00;
+  --pink: #ff6600;
+  --cyan: #00ccff;
+  --green: #00ff66;           /* terminal green */
+  --red: #ff3333;
+  --amber: #ffcc00;
+
+  --grad-main: linear-gradient(135deg, #ffaa00 0%, #ff6600 100%);
+  --grad-cool: linear-gradient(135deg, #00ccff 0%, #ffaa00 100%);
+  --grad-bg: none;            /* flat, no fancy gradients */
+
+  --font-sans: 'Courier New', monospace;
+  --font-mono: 'Courier New', monospace;
+
+  --radius-card: 4px;         /* sharper corners */
+
+  --chart-primary: #ffaa00;
+  --chart-secondary: #00ff66;
+  --chart-tertiary: #00ccff;
+  --chart-pos: #00ff66;
+  --chart-neg: #ff3333;
+  --chart-neutral: #ffcc00;
+  --chart-grid: rgba(255,170,0,0.08);
+  --chart-text: #888888;
+}
+
+/* =========================================================================
+   VARIANT 3: Corporate Sáng — quỹ đầu tư / PDF export
+   Active: <html data-theme="corporate">
+   ========================================================================= */
+[data-theme="corporate"] {
+  --bg-0: #f8f9fc;
+  --bg-1: #ffffff;
+  --bg-2: #edf2f7;
+  --card: #ffffff;
+  --card-solid: #ffffff;
+
+  --border: #e2e8f0;
+  --border-hot: #2c5282;
+
+  --text: #1a202c;
+  --text-dim: #4a5568;
+  --text-faint: #a0aec0;
+
+  --purple: #1a365d;          /* navy */
+  --purple-2: #2c5282;
+  --pink: #c53030;
+  --cyan: #2c7a7b;
+  --green: #2f855a;
+  --red: #c53030;
+  --amber: #c05621;
+
+  --grad-main: linear-gradient(135deg, #1a365d 0%, #2c5282 100%);
+  --grad-cool: linear-gradient(135deg, #2c7a7b 0%, #2c5282 100%);
+  --grad-bg: none;
+
+  --radius-card: 12px;
+
+  --chart-primary: #1a365d;
+  --chart-secondary: #2c5282;
+  --chart-tertiary: #2c7a7b;
+  --chart-pos: #2f855a;
+  --chart-neg: #c53030;
+  --chart-neutral: #c05621;
+  --chart-grid: rgba(26,54,93,0.06);
+  --chart-text: #4a5568;
+}
+
+/* =========================================================================
+   VIZ COMPONENTS — shared UI classes
+   Trích xuất từ dashboard/technical/profile/news templates (đã trùng lặp 4 lần).
+
+   Components reference tokens từ tokens.css (never hardcode colors).
+   Mỗi component = self-contained block, có thể chọn lọc include.
+   ========================================================================= */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  background: var(--bg-0);
+  color: var(--text);
+  font-family: var(--font-sans);
+  line-height: 1.5;
+  overflow-x: hidden;
+}
+
+body {
+  background-image: var(--grad-bg);
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+.container { max-width: 1480px; margin: 0 auto; padding: 24px 32px 80px; }
+
+/* --- Semantic color classes --- */
+.pos { color: var(--green); }
+.neg { color: var(--red); }
+.neu { color: var(--amber); }
+
+/* =========================================================================
+   HERO
+   ========================================================================= */
+.hero {
+  background: linear-gradient(135deg, rgba(168,85,247,0.12), rgba(236,72,153,0.08));
+  border: 1px solid var(--border);
+  border-radius: 32px;
+  padding: 40px 44px;
+  margin-bottom: 28px;
+  position: relative;
+  overflow: hidden;
+  backdrop-filter: blur(20px);
+}
+.hero::before {
+  content: '';
+  position: absolute;
+  top: -100px; right: -50px;
+  width: 400px; height: 400px;
+  background: radial-gradient(circle, rgba(236,72,153,0.25), transparent 70%);
+  filter: blur(40px);
+  pointer-events: none;
+}
+.hero-top {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 24px; flex-wrap: wrap;
+  position: relative; z-index: 2;
+}
+.ticker-badge {
+  display: inline-flex; align-items: center; gap: 10px;
+  background: var(--grad-main); color: #fff;
+  padding: 6px 16px; border-radius: var(--radius-pill);
+  font-weight: 700; font-size: 13px; letter-spacing: 0.5px;
+  box-shadow: 0 8px 24px rgba(168,85,247,0.4);
+}
+.update-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: rgba(16,217,138,0.15); color: var(--green);
+  padding: 4px 12px; border-radius: var(--radius-pill);
+  font-weight: 600; font-size: 11px;
+  border: 1px solid rgba(16,217,138,0.3);
+  margin-left: 8px; vertical-align: middle;
+}
+.company-name {
+  font-size: 42px; font-weight: 800; margin-top: 14px;
+  letter-spacing: -1px;
+  background: linear-gradient(90deg, #fff, #c4b5fd);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.company-sub { color: var(--text-dim); margin-top: 6px; font-size: 15px; }
+.price-block { text-align: right; }
+.price-now { font-size: 52px; font-weight: 800; letter-spacing: -1.5px; }
+.price-now .ccy { font-size: 22px; color: var(--text-dim); font-weight: 500; margin-right: 6px; }
+.price-unit { font-size: 14px; color: var(--text-faint); font-weight: 400; }
+.price-meta { margin-top: 8px; color: var(--text-dim); font-size: 13px; }
+
+/* --- KPI strip (6 cards under hero) --- */
+.kpi-strip {
+  display: grid; grid-template-columns: repeat(6, 1fr);
+  gap: 14px; margin-top: 32px;
+  position: relative; z-index: 2;
+}
+.kpi {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px; padding: 18px;
+  backdrop-filter: blur(12px);
+  transition: transform .25s, border-color .25s;
+}
+.kpi:hover { transform: translateY(-3px); border-color: var(--border-hot); }
+.kpi-label {
+  font-size: 11px; color: var(--text-faint);
+  text-transform: uppercase; letter-spacing: 1px; font-weight: 600;
+}
+.kpi-value { font-size: 24px; font-weight: 700; margin-top: 6px; }
+.kpi-delta { font-size: 12px; margin-top: 4px; font-weight: 600; }
+
+/* =========================================================================
+   SECTION TITLES
+   ========================================================================= */
+.section-title {
+  display: flex; align-items: center; gap: 12px;
+  margin: 44px 0 20px;
+}
+.section-title h2 { font-size: 24px; font-weight: 700; letter-spacing: -0.5px; }
+.section-title .tag {
+  font-size: 11px; font-weight: 700; letter-spacing: 1px;
+  text-transform: uppercase; padding: 4px 10px;
+  border-radius: 6px; color: #fff;
+}
+.tag.purple { background: var(--purple); }
+.tag.pink   { background: var(--pink); }
+.tag.cyan   { background: var(--cyan); color: #000; }
+.tag.amber  { background: var(--amber); color: #000; }
+.tag.green  { background: var(--green); color: #000; }
+.divider-line { flex: 1; height: 1px; background: linear-gradient(90deg, var(--border), transparent); }
+
+/* =========================================================================
+   GRID LAYOUTS
+   ========================================================================= */
+.grid-2   { display: grid; grid-template-columns: 1fr 1fr;          gap: 20px; }
+.grid-3   { display: grid; grid-template-columns: repeat(3, 1fr);   gap: 20px; }
+.grid-2-1 { display: grid; grid-template-columns: 2fr 1fr;          gap: 20px; }
+.grid-1-2 { display: grid; grid-template-columns: 1fr 2fr;          gap: 20px; }
+
+/* =========================================================================
+   CARD
+   ========================================================================= */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: 24px;
+  backdrop-filter: blur(14px);
+  position: relative; overflow: hidden;
+}
+.card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.card-title { font-size: 15px; font-weight: 600; color: var(--text); }
+.card-sub { font-size: 12px; color: var(--text-faint); margin-top: 2px; }
+.chart-wrap { position: relative; height: 280px; }
+.chart-wrap.sm { height: 220px; }
+.chart-wrap.lg { height: 340px; }
+
+/* =========================================================================
+   FINANCIAL TABLE
+   ========================================================================= */
+.fin-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.fin-table th {
+  text-align: right; padding: 12px 10px;
+  color: var(--text-faint); font-weight: 600; font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border);
+}
+.fin-table th:first-child { text-align: left; }
+.fin-table td {
+  padding: 12px 10px; text-align: right;
+  border-bottom: 1px solid rgba(139,92,246,0.08);
+}
+.fin-table td:first-child { text-align: left; color: var(--text-dim); font-weight: 500; }
+.fin-table tbody tr:hover { background: rgba(168,85,247,0.05); }
+.fin-table .row-strong td { font-weight: 700; color: var(--text); background: rgba(168,85,247,0.06); }
+.fin-table .row-strong td:first-child { color: var(--purple); }
+.fin-table .col-latest { background: rgba(16,217,138,0.06); font-weight: 700; }
+
+/* =========================================================================
+   VALUATION CARDS (5-scenario grid)
+   ========================================================================= */
+.val-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+.val-card {
+  border-radius: 18px; padding: 18px; text-align: center;
+  position: relative; overflow: hidden;
+  border: 1px solid var(--border);
+  background: rgba(20,20,40,0.4);
+}
+.val-card .name { font-size: 11px; color: var(--text-faint); font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; }
+.val-card .price { font-size: 26px; font-weight: 800; margin-top: 8px; }
+.val-card .price small { font-size: 13px; color: var(--text-dim); font-weight: 500; }
+.val-card .upside { font-size: 12px; margin-top: 6px; font-weight: 700; }
+.val-card.base { background: linear-gradient(135deg, rgba(168,85,247,0.25), rgba(236,72,153,0.15)); border-color: var(--border-hot); }
+.val-card.base::after {
+  content: 'KHUYẾN NGHỊ'; position: absolute; top: 8px; right: 8px;
+  font-size: 8px; font-weight: 800; background: var(--grad-main);
+  padding: 2px 6px; border-radius: 4px; letter-spacing: 0.5px;
+}
+.bar-track { height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; margin-top: 10px; overflow: hidden; }
+.bar-fill  { height: 100%; border-radius: 3px; background: var(--grad-main); }
+
+/* =========================================================================
+   GAUGE (fair value verdict)
+   ========================================================================= */
+.gauge-wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; }
+.gauge-num {
+  font-size: 64px; font-weight: 900; letter-spacing: -2px;
+  background: var(--grad-main);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+}
+.gauge-label { color: var(--text-dim); font-size: 13px; margin-top: 4px; }
+.gauge-verdict { margin-top: 18px; padding: 8px 20px; border-radius: var(--radius-pill); font-weight: 700; font-size: 14px; background: var(--green); color: #000; }
+
+/* =========================================================================
+   INSIGHT CARDS (special insights section)
+   ========================================================================= */
+.insight-card {
+  background: linear-gradient(135deg, rgba(6,182,212,0.08), rgba(139,92,246,0.06));
+  border: 1px solid rgba(6,182,212,0.2);
+  border-radius: 20px; padding: 22px;
+  position: relative; overflow: hidden;
+}
+.insight-card .ico {
+  width: 42px; height: 42px; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; margin-bottom: 12px;
+  background: var(--grad-cool);
+}
+.insight-card h4 { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+.insight-card p  { font-size: 13px; color: var(--text-dim); line-height: 1.6; }
+.insight-card .metric { display: flex; gap: 16px; margin-top: 14px; flex-wrap: wrap; }
+.insight-card .metric div { flex: 1; min-width: 80px; }
+.insight-card .metric .v { font-size: 18px; font-weight: 700; }
+.insight-card .metric .l { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* --- Rating dots --- */
+.rating-row { display: flex; align-items: center; gap: 14px; padding: 14px 0; border-bottom: 1px solid rgba(139,92,246,0.08); }
+.rating-row:last-child { border-bottom: none; }
+.rating-row .cat { flex: 1; font-size: 13px; color: var(--text-dim); }
+.dots { display: flex; gap: 4px; }
+.dot  { width: 11px; height: 11px; border-radius: 50%; background: rgba(255,255,255,0.1); }
+.dot.on { background: var(--grad-main); }
+
+/* =========================================================================
+   EXECUTIVE SUMMARY
+   ========================================================================= */
+.exec-summary {
+  background: linear-gradient(135deg, rgba(168,85,247,0.15), rgba(236,72,153,0.1));
+  border: 1px solid var(--border-hot);
+  border-radius: var(--radius-card); padding: 28px 32px;
+  margin-bottom: 24px;
+  backdrop-filter: blur(14px);
+  position: relative; overflow: hidden;
+}
+.exec-summary::before {
+  content: ''; position: absolute; top: -80px; right: -30px;
+  width: 300px; height: 300px;
+  background: radial-gradient(circle, rgba(168,85,247,0.18), transparent 70%);
+  filter: blur(30px);
+}
+.exec-label {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 11px; font-weight: 700; letter-spacing: 1.5px;
+  text-transform: uppercase; color: var(--purple);
+  background: rgba(168,85,247,0.15); padding: 5px 12px;
+  border-radius: 6px; margin-bottom: 14px;
+  position: relative; z-index: 2;
+}
+.exec-title { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 12px; line-height: 1.3; position: relative; z-index: 2; }
+.exec-body { font-size: 14px; color: var(--text-dim); line-height: 1.7; margin-bottom: 18px; position: relative; z-index: 2; }
+.exec-body strong { color: var(--text); font-weight: 600; }
+.exec-body .up   { color: var(--green); font-weight: 700; }
+.exec-body .down { color: var(--red);   font-weight: 700; }
+.exec-highlights { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; position: relative; z-index: 2; }
+.exec-hl { background: rgba(20,20,40,0.6); border: 1px solid var(--border); border-radius: 14px; padding: 14px; text-align: center; }
+.exec-hl.pos { border-color: rgba(16,217,138,0.3); }
+.exec-hl.neg { border-color: rgba(255,77,109,0.3); }
+.exec-hl.neu { border-color: rgba(251,191,36,0.3); }
+.exec-hl-lbl { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+.exec-hl-val { font-size: 20px; font-weight: 800; margin-top: 4px; font-family: var(--font-mono); }
+.exec-hl-sub { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+
+/* =========================================================================
+   NEWS CARDS
+   ========================================================================= */
+.news-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px; padding: 22px;
+  backdrop-filter: blur(14px);
+  position: relative;
+  transition: transform .25s, border-color .25s;
+  overflow: hidden;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.news-card:hover { transform: translateY(-3px); }
+.news-card.positive { border-left: 4px solid var(--green); }
+.news-card.positive:hover { border-color: var(--green); }
+.news-card.negative { border-left: 4px solid var(--red); }
+.news-card.negative:hover { border-color: var(--red); }
+.news-card.neutral { border-left: 4px solid var(--amber); }
+.news-card.neutral:hover { border-color: var(--amber); }
+.news-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.news-cat { font-size: 10px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; padding: 3px 8px; border-radius: 5px; }
+.news-cat.biz        { background: rgba(16,217,138,0.2); color: var(--green); }
+.news-cat.sector     { background: rgba(168,85,247,0.2); color: var(--purple); }
+.news-cat.macro      { background: rgba(251,191,36,0.2); color: var(--amber); }
+.news-cat.disclosure { background: rgba(6,182,212,0.2); color: var(--cyan); }
+.news-cat.analyst    { background: rgba(236,72,153,0.2); color: var(--pink); }
+.news-date { font-size: 11px; color: var(--text-faint); font-family: var(--font-mono); }
+.news-title { font-size: 15px; font-weight: 700; line-height: 1.4; }
+.news-summary { font-size: 13px; color: var(--text-dim); line-height: 1.6; }
+.news-metrics { display: flex; gap: 10px; flex-wrap: wrap; margin: 2px 0; }
+.news-metric { flex: 1; min-width: 90px; background: rgba(255,255,255,0.04); border: 1px solid rgba(139,92,246,0.1); border-radius: 10px; padding: 8px 10px; }
+.news-metric .ml { font-size: 9px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+.news-metric .mv { font-size: 15px; font-weight: 700; margin-top: 2px; font-family: var(--font-mono); }
+.news-metric .mv.pos { color: var(--green); }
+.news-metric .mv.neg { color: var(--red); }
+.news-metric .mv.neu { color: var(--amber); }
+.news-why { background: rgba(168,85,247,0.06); border-left: 3px solid var(--purple); border-radius: 0 10px 10px 0; padding: 10px 14px; font-size: 12px; color: var(--text-dim); line-height: 1.55; }
+.news-why strong { color: var(--purple); font-weight: 600; }
+.news-impact { display: flex; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 1px solid rgba(139,92,246,0.1); margin-top: auto; }
+.sentiment-pill { font-size: 10px; font-weight: 700; padding: 3px 10px; border-radius: var(--radius-pill); text-transform: uppercase; letter-spacing: 0.5px; }
+.sentiment-pill.bullish { background: rgba(16,217,138,0.15); color: var(--green); border: 1px solid rgba(16,217,138,0.3); }
+.sentiment-pill.bearish { background: rgba(255,77,109,0.15); color: var(--red); border: 1px solid rgba(255,77,109,0.3); }
+.sentiment-pill.neutral { background: rgba(251,191,36,0.15); color: var(--amber); border: 1px solid rgba(251,191,36,0.3); }
+.impact-score { font-size: 11px; color: var(--text-faint); }
+.impact-score .v { font-weight: 700; color: var(--text); }
+.news-link { font-size: 11px; color: var(--purple); text-decoration: none; font-weight: 500; display: inline-flex; align-items: center; gap: 4px; }
+.news-link:hover { text-decoration: underline; }
+
+/* =========================================================================
+   SENTIMENT METER
+   ========================================================================= */
+.meter-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 24px; backdrop-filter: blur(14px); margin-bottom: 24px; }
+.meter-wrap { display: flex; align-items: center; gap: 32px; flex-wrap: wrap; }
+.meter-gauge { flex: 0 0 200px; text-align: center; }
+.meter-score { font-size: 64px; font-weight: 900; line-height: 1; background: var(--grad-main); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.meter-label { color: var(--text-dim); font-size: 12px; margin-top: 6px; }
+.meter-verdict { margin-top: 10px; padding: 6px 16px; border-radius: var(--radius-pill); font-weight: 700; font-size: 13px; background: var(--green); color: #000; display: inline-block; }
+.meter-breakdown { flex: 1; min-width: 280px; }
+.meter-bar { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+.meter-bar .lbl { font-size: 12px; width: 60px; color: var(--text-dim); }
+.meter-bar .track { flex: 1; height: 18px; background: rgba(255,255,255,0.06); border-radius: 9px; overflow: hidden; }
+.meter-bar .fill { height: 100%; border-radius: 9px; transition: width .8s ease; }
+.meter-bar .pct { font-size: 12px; font-weight: 700; width: 36px; text-align: right; }
+.news-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+
+/* =========================================================================
+   TIMELINE
+   ========================================================================= */
+.timeline-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 24px; backdrop-filter: blur(14px); }
+.timeline { position: relative; padding-left: 24px; }
+.timeline::before { content: ''; position: absolute; left: 8px; top: 8px; bottom: 8px; width: 2px; background: linear-gradient(180deg, var(--purple), var(--pink), var(--cyan)); }
+.tl-item { position: relative; margin-bottom: 18px; padding-left: 24px; }
+.tl-item::before { content: ''; position: absolute; left: -20px; top: 6px; width: 12px; height: 12px; border-radius: 50%; background: var(--card); border: 2px solid var(--purple); box-shadow: 0 0 0 3px rgba(168,85,247,0.2); }
+.tl-item.pos::before { border-color: var(--green); box-shadow: 0 0 0 3px rgba(16,217,138,0.2); }
+.tl-item.neg::before { border-color: var(--red); box-shadow: 0 0 0 3px rgba(255,77,109,0.2); }
+.tl-date { font-size: 11px; color: var(--text-faint); font-family: var(--font-mono); font-weight: 600; }
+.tl-text { font-size: 13px; color: var(--text); margin-top: 2px; }
+.tl-source { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+
+/* =========================================================================
+   KEY TAKEAWAYS
+   ========================================================================= */
+.takeaways { background: linear-gradient(135deg, rgba(168,85,247,0.12), rgba(6,182,212,0.06)); border: 1px solid var(--border-hot); border-radius: var(--radius-card); padding: 28px; margin-top: 24px; }
+.takeaway-item { display: flex; gap: 14px; padding: 14px 0; border-bottom: 1px solid rgba(139,92,246,0.1); }
+.takeaway-item:last-child { border-bottom: none; }
+.takeaway-num { flex: 0 0 32px; height: 32px; border-radius: 10px; background: var(--grad-main); display: flex; align-items: center; justify-content: center; font-weight: 800; color: #fff; font-size: 14px; }
+.takeaway-content h4 { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+.takeaway-content p { font-size: 13px; color: var(--text-dim); line-height: 1.6; }
+
+/* =========================================================================
+   TECHNICAL ANALYSIS COMPONENTS
+   ========================================================================= */
+.tech-verdict-card { background: linear-gradient(135deg, rgba(251,191,36,0.12), rgba(255,77,109,0.08)); border: 1px solid rgba(251,191,36,0.3); border-radius: var(--radius-card); padding: 28px; margin-bottom: 24px; backdrop-filter: blur(14px); }
+.tech-verdict-grid { display: grid; grid-template-columns: 1fr 2fr; gap: 24px; align-items: center; }
+.tech-score-big { font-size: 72px; font-weight: 900; line-height: 1; text-align: center; background: linear-gradient(135deg, #fbbf24, #ff4d6d); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.tech-score-lbl { font-size: 11px; color: var(--text-faint); text-align: center; margin-top: 4px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
+.tech-verdict-pill { margin-top: 10px; padding: 6px 16px; border-radius: var(--radius-pill); font-weight: 700; font-size: 13px; background: rgba(251,191,36,0.2); color: var(--amber); border: 1px solid rgba(251,191,36,0.4); display: inline-block; text-align: center; }
+.tech-indicators { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.tech-ind { background: rgba(20,20,40,0.6); border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
+.tech-ind-lbl { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+.tech-ind-val { font-size: 20px; font-weight: 800; margin-top: 4px; font-family: var(--font-mono); }
+.tech-ind-val.pos { color: var(--green); }
+.tech-ind-val.neg { color: var(--red); }
+.tech-ind-val.neu { color: var(--amber); }
+.tech-ind-sub { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+.signal-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-top: 16px; }
+.signal-cell { background: rgba(255,255,255,0.04); border: 1px solid var(--border); border-radius: 10px; padding: 10px; text-align: center; }
+.signal-cell.sell     { border-color: rgba(255,77,109,0.4); }
+.signal-cell.buy      { border-color: rgba(16,217,138,0.4); }
+.signal-cell.neutral  { border-color: rgba(251,191,36,0.4); }
+.signal-name { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+.signal-val { font-size: 14px; font-weight: 800; margin-top: 4px; }
+.signal-val.sell    { color: var(--red); }
+.signal-val.buy     { color: var(--green); }
+.signal-val.neutral { color: var(--amber); }
+.tech-chart-wrap { position: relative; height: 320px; margin-top: 16px; }
+
+/* =========================================================================
+   PROFILE MODE (non-advice)
+   ========================================================================= */
+.profile-read-card { background: linear-gradient(135deg, rgba(168,85,247,0.12), rgba(6,182,212,0.08)); border: 1px solid var(--border-hot); border-radius: var(--radius-card); padding: 28px 32px; margin-bottom: 24px; backdrop-filter: blur(14px); position: relative; overflow: hidden; }
+.profile-read-card::before { content: ''; position: absolute; top: -80px; right: -30px; width: 300px; height: 300px; background: radial-gradient(circle, rgba(168,85,247,0.18), transparent 70%); filter: blur(30px); }
+.read-label { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--purple); background: rgba(168,85,247,0.15); padding: 5px 12px; border-radius: 6px; margin-bottom: 14px; position: relative; z-index: 2; }
+.read-archetype { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 12px; line-height: 1.3; position: relative; z-index: 2; }
+.read-archetype .pill { font-size: 13px; font-weight: 700; padding: 4px 14px; border-radius: var(--radius-pill); margin-left: 10px; vertical-align: middle; }
+.read-archetype .pill.trend_following { background: rgba(6,182,212,0.2); color: var(--cyan); border: 1px solid rgba(6,182,212,0.4); }
+.read-archetype .pill.accumulation_breakout { background: rgba(139,92,246,0.2); color: var(--purple-2); border: 1px solid rgba(139,92,246,0.4); }
+.read-archetype .pill.trap_prone { background: rgba(255,77,109,0.2); color: var(--red); border: 1px solid rgba(255,77,109,0.4); }
+.read-archetype .pill.mixed, .read-archetype .pill.no_current_setup { background: rgba(251,191,36,0.2); color: var(--amber); border: 1px solid rgba(251,191,36,0.4); }
+.read-body { font-size: 14px; color: var(--text-dim); line-height: 1.7; margin-bottom: 18px; position: relative; z-index: 2; }
+.read-body strong { color: var(--text); font-weight: 600; }
+.archetype-icon { flex: 0 0 80px; height: 80px; border-radius: 20px; display: flex; align-items: center; justify-content: center; font-size: 36px; background: var(--grad-cool); box-shadow: 0 8px 24px rgba(6,182,212,0.3); }
+.profile-read-grid { display: grid; grid-template-columns: 80px 1fr; gap: 20px; align-items: center; position: relative; z-index: 2; }
+
+/* --- Callout (guardrail / non-conclusion) --- */
+.callout { border-radius: 14px; padding: 14px 18px; margin: 14px 0; font-size: 13px; line-height: 1.6; border-left: 4px solid var(--purple); background: rgba(168,85,247,0.06); }
+.callout h4 { font-size: 13px; font-weight: 700; margin-bottom: 6px; }
+.callout.warn { border-color: var(--red); background: rgba(255,77,109,0.06); }
+.callout.warn h4 { color: var(--red); }
+.callout.good { border-color: var(--green); background: rgba(16,217,138,0.06); }
+.callout.good h4 { color: var(--green); }
+.callout.info { border-color: var(--cyan); background: rgba(6,182,212,0.06); }
+.callout.info h4 { color: var(--cyan); }
+.callout ul { margin: 6px 0 0 18px; padding: 0; }
+
+/* =========================================================================
+   NAVIGATION BAR + SCROLL PROGRESS + BACK-TO-TOP
+   ========================================================================= */
+.topnav {
+  position: sticky; top: 0; z-index: 1000;
+  background: rgba(10,10,20,0.85);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(139,92,246,0.2);
+  padding: 0 16px;
+}
+.topnav-inner {
+  max-width: 1480px; margin: 0 auto;
+  display: flex; align-items: center; gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(139,92,246,0.3) transparent;
+}
+.topnav-inner::-webkit-scrollbar { height: 4px; }
+.topnav-inner::-webkit-scrollbar-thumb { background: rgba(139,92,246,0.3); border-radius: 2px; }
+.topnav-brand {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px 10px 0;
+  font-weight: 800; font-size: 13px; color: var(--purple);
+  white-space: nowrap;
+  border-right: 1px solid rgba(139,92,246,0.15);
+  margin-right: 6px;
+}
+.topnav-brand .dot-color { width: 8px; height: 8px; border-radius: 50%; background: var(--grad-main); }
+.topnav-link {
+  padding: 10px 12px; font-size: 12px; font-weight: 600;
+  color: var(--text-dim); text-decoration: none;
+  white-space: nowrap; border-radius: 8px;
+  transition: all .2s;
+  border-bottom: 2px solid transparent;
+}
+.topnav-link:hover { color: var(--text); background: rgba(139,92,246,0.08); }
+.topnav-link.active { color: var(--purple); border-bottom-color: var(--purple); background: rgba(168,85,247,0.1); }
+
+.progress-bar {
+  position: fixed; top: 0; left: 0; height: 3px;
+  background: var(--grad-main); width: 0; z-index: 1001;
+  transition: width .1s ease;
+  box-shadow: 0 0 12px rgba(168,85,247,0.6);
+}
+.back-top {
+  position: fixed; bottom: 24px; right: 24px;
+  width: 44px; height: 44px; border-radius: 50%;
+  background: var(--grad-main); color: #fff; border: none;
+  cursor: pointer; font-size: 18px;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 8px 24px rgba(168,85,247,0.4);
+  opacity: 0; transform: translateY(20px);
+  transition: all .3s; z-index: 999;
+}
+.back-top.visible { opacity: 1; transform: translateY(0); }
+.back-top:hover { transform: translateY(-3px) scale(1.05); }
+
+/* =========================================================================
+   FOOTER + DISCLAIMER
+   ========================================================================= */
+footer { margin-top: 60px; padding-top: 24px; border-top: 1px solid var(--border); color: var(--text-faint); font-size: 12px; text-align: center; line-height: 1.8; }
+footer a { color: var(--purple); text-decoration: none; }
+.disclaimer {
+  background: rgba(251,191,36,0.06);
+  border: 1px solid rgba(251,191,36,0.2);
+  border-radius: 14px; padding: 14px 18px;
+  margin-top: 24px; font-size: 12px; color: var(--text-dim);
+}
+
+/* =========================================================================
+   ANIMATIONS
+   ========================================================================= */
+@keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+.fade { animation: fadeUp .6s ease both; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+.live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--green); margin-right: 6px; animation: pulse 1.5s infinite; }
+
+/* =========================================================================
+   RESPONSIVE
+   ========================================================================= */
+@media (max-width: 1100px) {
+  .kpi-strip { grid-template-columns: repeat(3, 1fr); }
+  .grid-2, .grid-3, .grid-2-1, .grid-1-2 { grid-template-columns: 1fr; }
+  .val-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 600px) {
+  .container { padding: 16px; }
+  .hero { padding: 24px; border-radius: 20px; }
+  .company-name { font-size: 30px; }
+  .price-now { font-size: 38px; }
+  .kpi-strip { grid-template-columns: repeat(2, 1fr); }
+  .val-grid { grid-template-columns: 1fr 1fr; }
+  .topnav-brand { display: none; }
+  .topnav-link { padding: 8px 10px; font-size: 11px; }
+  .profile-read-grid { grid-template-columns: 1fr; }
+  .archetype-icon { margin: 0 auto; }
+}
+
+</style>) */
+.container{max-width:1280px;margin:0 auto;padding:24px 32px 80px}
+#chartCandlestick{width:100%;height:100%;display:block}
+/* Hero gradient được param hóa (data token), default fintech nếu không fill */
+.hero{background:{{HERO_GRADIENT}};border:1px solid var(--border);border-radius:32px;padding:40px 44px;margin-bottom:28px;position:relative;overflow:hidden;backdrop-filter:blur(20px)}
+.topnav-inner{max-width:1280px}
+@media (max-width:1100px){.profile-read-grid{grid-template-columns:1fr}.archetype-icon{margin:0 auto}}
+</style>
+</head>
+<body>
+<div class="progress-bar" id="progressBar"></div>
+
+<nav class="topnav"><div class="topnav-inner">
+  <div class="topnav-brand"><span class="dot-color"></span>PROFILE · {{TICKER}}</div>
+  <a href="#read" class="topnav-link active">Đọc như</a>
+  <a href="#chart" class="topnav-link">Biểu đồ nến</a>
+  <a href="#price" class="topnav-link">Vị trí giá</a>
+  <a href="#risk" class="topnav-link">Mức giảm & rủi ro</a>
+  <a href="#flow" class="topnav-link">Dòng tiền</a>
+  <a href="#bench" class="topnav-link">So VNINDEX</a>
+  <a href="#vap" class="topnav-link">Volume-at-price</a>
+  <a href="#setup" class="topnav-link">Mẫu hình</a>
+  <a href="#notes" class="topnav-link">Lưu ý</a>
+</div></nav>
+
+<div class="container">
+
+  <!-- HERO -->
+  <header class="hero fade">
+    <div class="hero-top">
+      <div>
+        <span class="ticker-badge">⚡ {{TICKER}}</span>
+        <span class="update-badge"><span class="live-dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);margin-right:4px"></span>Cập nhật {{LATEST_DATE}}</span>
+        <h1 class="company-name">{{COMPANY_NAME}}</h1>
+        <p class="company-sub">{{EXCHANGE_INDUSTRY}} · Hồ sơ hành vi giá-khối lượng (mode PROFILE)</p>
+      </div>
+      <div class="price-block">
+        <div class="price-now"><span class="ccy">₫</span>{{LATEST_CLOSE_DISPLAY}}</div>
+        <div class="price-unit">đóng cửa (giá nghìn đồng ×1000 = đồng)</div>
+        <div class="price-meta">{{SAMPLE_PERIOD}} · {{SAMPLE_SIZE}} phiên</div>
+      </div>
+    </div>
+    <div class="kpi-strip">
+      <div class="kpi"><div class="kpi-label">Hiệu suất 1 tháng</div><div class="kpi-value {{KPI_RETURN_1M_CLASS}}">{{KPI_RETURN_1M}}</div></div>
+      <div class="kpi"><div class="kpi-label">Hiệu suất 3 tháng</div><div class="kpi-value {{KPI_RETURN_3M_CLASS}}">{{KPI_RETURN_3M}}</div></div>
+      <div class="kpi"><div class="kpi-label">Hiệu suất 1 năm</div><div class="kpi-value {{KPI_RETURN_1Y_CLASS}}">{{KPI_RETURN_1Y}}</div></div>
+      <div class="kpi"><div class="kpi-label">Độ biến động (60 phiên)</div><div class="kpi-value">{{KPI_HV60}}</div><div class="kpi-delta neu">đang ở mức {{KPI_HV60_PERCENTILE}}/100 so với năm qua</div></div>
+      <div class="kpi"><div class="kpi-label">Đang thấp hơn đỉnh</div><div class="kpi-value neg">{{KPI_DRAWDOWN}}</div><div class="kpi-delta neu">chưa lấy lại đỉnh {{KPI_UNDERWATER}} phiên</div></div>
+      <div class="kpi"><div class="kpi-label">Beta · Độ khớp (1 năm)</div><div class="kpi-value">{{KPI_BETA}}</div><div class="kpi-delta neu">Độ khớp {{KPI_R2}} → {{KPI_R2_LABEL}}</div></div>
+    </div>
+  </header>
+
+  <!-- PROFILE READ CARD (non-advice — KHÔNG BUY/SELL) -->
+  <section id="read" class="fade">
+    <div class="profile-read-card">
+      <div class="profile-read-grid">
+        <div class="archetype-icon">{{ARCHETYPE_ICON}}</div>
+        <div>
+          <span class="read-label">📖 Đọc như</span>
+          <div class="read-archetype">Cổ phiếu kiểu <span class="pill {{ARCHETYPE_PRIMARY}}">{{ARCHETYPE_PRIMARY_VI}}</span></div>
+          <p class="read-body">{{ARCHETYPE_NOTE}}</p>
+        </div>
+      </div>
+    </div>
+    <div class="callout info">
+      <h4>💡 Đây là hồ sơ mô tả, không phải khuyến nghị</h4>
+      <p>Archetype suy ra từ setup hiện tại + hành vi volume lịch sử. Mọi số liệu dưới đây là <strong>quan sát quá khứ</strong>, không phải dự báo hay tín hiệu giao dịch.</p>
+    </div>
+  </section>
+
+  <!-- SECTION: BIỂU ĐỒ NẾN & KHỐI LƯỢNG -->
+  <section id="chart" class="fade">
+    <div class="section-title"><span class="tag cyan">★</span><h2>Biểu đồ nến & khối lượng</h2><span class="divider-line"></span></div>
+    <div class="card">
+      <div class="card-head"><div><div class="card-title">Biểu đồ nến + khối lượng — {{SAMPLE_LAST_N}} phiên gần nhất</div><div class="card-sub">Nến xanh = phiên tăng, đỏ = phiên giảm · Đường vàng = giá TB 20 phiên, đường cyan = giá TB 50 phiên · Nét đứt = đỉnh/đáy trong 1 năm qua</div></div></div>
+      <div style="position:relative;height:380px"><canvas id="chartCandlestick"></canvas></div>
+    </div>
+    <div class="callout"><h4>Lưu ý khi đọc — Biểu đồ nến</h4>Giá tính theo nghìn đồng (vnstock). Đường trung bình và mức đỉnh/đáy chỉ là <strong>quan sát lịch sử</strong>, không phải vùng sẽ giao dịch hay dự báo tương lai. Khối lượng tính theo triệu cổ phiếu.</div>
+  </section>
+
+  <!-- SECTION 1: VỊ TRÍ GIÁ & BIẾN ĐỘNG -->
+  <section id="price" class="fade">
+    <div class="section-title"><span class="tag purple">01</span><h2>Vị trí giá & biến động</h2><span class="divider-line"></span></div>
+    <div class="grid-2-1">
+      <div class="card">
+        <div class="card-head"><div><div class="card-title">Hiệu suất hiện tại đang ở đâu so với lịch sử</div><div class="card-sub">Thanh màu = vị trí của lợi suất hiện tại trong lịch sử chính mã (100 = cao nhất từng thấy) — 4 khoảng thời gian</div></div></div>
+        <div class="chart-wrap"><canvas id="chartRolling"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div><div class="card-title">Biên độ & biến động</div></div></div>
+        <table class="fin-table">
+          <tbody>
+            <tr><td>Cách đỉnh 52 tuần</td><td><strong class="neg">{{PRICE_DIST_HIGH}}</strong></td></tr>
+            <tr><td>Cách đáy 52 tuần</td><td><strong class="pos">{{PRICE_DIST_LOW}}</strong></td></tr>
+            <tr><td>Biến động 20 phiên (HV20)</td><td>{{HV20}}</td></tr>
+            <tr><td>Biến động 60 phiên (HV60)</td><td>{{HV60_DETAIL}}</td></tr>
+            <tr><td>Biến động 120 phiên (HV120)</td><td>{{HV120}}</td></tr>
+            <tr><td>Biến động 1 năm (HV252)</td><td>{{HV252}}</td></tr>
+            <tr><td>Biên dao động TB (63 phiên)</td><td>{{RANGE_MEDIAN_63D}}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="callout"><h4>Lưu ý khi đọc — Vị trí giá & biến động</h4>Các khoảng thời gian trong bảng <strong>chồng lấp nhau</strong>, nên không phải quan sát độc lập và không phải xác suất tương lai. Độ biến động đo mức dao động đã xảy ra, không phải dải giá sẽ xảy ra.</div>
+  </section>
+
+  <!-- SECTION 2: MỨC GIẢM & RỦI RO ĐUÔI -->
+  <section id="risk" class="fade">
+    <div class="section-title"><span class="tag pink">02</span><h2>Mức giảm & rủi ro đuôi</h2><span class="divider-line"></span></div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-head"><div><div class="card-title">Các phiên tăng giảm phân bố thế nào (1 năm)</div><div class="card-sub">Cột càng cao = số phiên ở mức đó càng nhiều. Xanh = tăng, đỏ = giảm</div></div></div>
+        <div class="chart-wrap"><canvas id="chartDist"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div><div class="card-title">Những phiên giảm mạnh nhất</div><div class="card-sub">Ngày xấu từng xảy ra trong năm qua — đọc để biết rủi ro, không phải dự báo</div></div></div>
+        <table class="fin-table">
+          <tbody>
+            <tr><td>Đang thấp hơn đỉnh bao nhiêu</td><td><strong class="neg">{{DRAWDOWN_CURRENT}}</strong></td></tr>
+            <tr><td>Sụt giảm sâu nhất từng ghi nhận</td><td class="neg">{{DRAWDOWN_MAX}}</td></tr>
+            <tr><td>Chưa lấy lại đỉnh sau bao nhiêu phiên</td><td>{{UNDERWATER_DAYS}}</td></tr>
+            <tr><td>Ngày giảm tồi tệ — 95% thời gian không vượt (VaR 95)</td><td class="neg">{{VAR_95}}</td></tr>
+            <tr><td>Ngày giảm tồi tệ — 99% thời gian không vượt (VaR 99)</td><td class="neg">{{VAR_99}}</td></tr>
+            <tr><td>Mức giảm TB những ngày tồi tệ (ES 95)</td><td class="neg">{{ES_95}}</td></tr>
+            <tr><td>Số ngày giảm ≥5% (trong 1 năm)</td><td>{{DOWN_5PCT_DAYS}}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="callout warn"><h4>⚠️ Lưu ý khi đọc — Những phiên giảm mạnh</h4>Các con số trên là <strong>những gì đã từng xảy ra</strong> trong lịch sử, không phải dự báo tương lai. Rủi ro thực tế có thể nặng hơn hoặc nhẹ hơn tùy giai đoạn thị trường và dữ liệu chưa điều chỉnh sự kiện vốn.</div>
+  </section>
+
+  <!-- SECTION 3: DÒNG TIỀN & XÁC NHẬN -->
+  <section id="flow" class="fade">
+    <div class="section-title"><span class="tag cyan">03</span><h2>Dòng tiền & xác nhận giá-khối lượng</h2><span class="divider-line"></span></div>
+    <div class="grid-3">
+      <div class="card"><div class="card-head"><div class="card-title">Giá và khối lượng có cùng chiều? (VPCI)</div></div><div class="kpi-value">{{VPCI_VALUE}}</div><div class="kpi-delta neu">đang ở mức {{VPCI_PERCENTILE}}/100 so với năm qua</div><div style="margin-top:10px;font-size:13px;font-weight:700;color:var(--cyan)">{{CONFIRMATION_LABEL}}</div></div>
+      <div class="card"><div class="card-head"><div class="card-title">Dòng tiền vào hay ra? (CMF)</div></div><div class="kpi-value {{CMF_CLASS}}">{{CMF_20}}</div><div class="kpi-delta neu">60 phiên: {{CMF_60}}</div><div style="margin-top:10px;font-size:13px;font-weight:700;color:var(--{{CMF_COLOR_TOKEN}})">{{MONEY_FLOW_LABEL}}</div></div>
+      <div class="card"><div class="card-head"><div class="card-title">Sau phiên giao dịch lớn</div></div><div class="kpi-value">{{HVB_COUNT}}</div><div class="kpi-delta neu">lần/năm · mức tăng TB 20 phiên sau: {{HVB_MEDIAN}}</div><div style="margin-top:10px;font-size:13px;font-weight:700;color:var(--amber)">{{HVB_LABEL}}</div></div>
+    </div>
+    <div class="callout"><h4>Lưu ý khi đọc — Dòng tiền</h4>Các chỉ báo dòng tiền chỉ đo áp lực từ dữ liệu giá + khối lượng từng ngày; <strong>không cho thấy</strong> dòng tiền thực của khối lớn (block trade), sổ lệnh trong phiên hay dữ liệu intraday. Đây là quan sát lịch sử, không phải tín hiệu giao dịch.</div>
+  </section>
+
+  <!-- SECTION 4: SO VNINDEX -->
+  <section id="bench" class="fade">
+    <div class="section-title"><span class="tag purple">04</span><h2>So với VNINDEX</h2><span class="divider-line"></span></div>
+    <div class="grid-2-1">
+      <div class="card">
+        <div class="card-head"><div><div class="card-title">{{TICKER}} vs VNINDEX (base 100)</div><div class="card-sub">So sánh đường đi 1 năm — 2 chuỗi quy về 100 tại điểm bắt đầu</div></div></div>
+        <div class="chart-wrap"><canvas id="chartBench"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div><div class="card-title">Metrics</div><div class="card-sub">3 cửa sổ</div></div></div>
+        <table class="fin-table">
+          <thead><tr><th>Khung thời gian</th><th>Beta<br><span style="font-weight:400;text-transform:none">đu theo thị trường</span></th><th>Tương quan<br><span style="font-weight:400;text-transform:none">đi cùng thị trường</span></th><th>Độ khớp (R²)<br><span style="font-weight:400;text-transform:none">đáng tin cậy</span></th></tr></thead>
+          <tbody>{{BENCH_TABLE_ROWS}}</tbody>
+        </table>
+        <div style="margin-top:14px;font-size:12px;color:var(--text-dim)">Hiệu suất {{TICKER}} (1 năm): <strong class="{{REL_RETURN_CLASS}}">{{STOCK_RETURN_252}}</strong> · VNINDEX: <strong>{{BENCH_RETURN_252}}</strong> · Chênh so thị trường: <strong class="{{REL_RETURN_CLASS}}">{{REL_RETURN_252}}</strong></div>
+      </div>
+    </div>
+    <div class="callout info"><h4>Lưu ý khi đọc — So với VNINDEX</h4>Beta thấp <strong>không đồng nghĩa ít rủi ro</strong>; khi độ khớp (R²) thấp (&lt;0.40) thì không nên đọc beta quá sâu. Đây là so sánh lịch sử, không phải dự báo tương lai.</div>
+  </section>
+
+  <!-- SECTION 5: VOLUME-AT-PRICE -->
+  <section id="vap" class="fade">
+    <div class="section-title"><span class="tag amber">05</span><h2>Khối lượng giao dịch theo từng mức giá</h2><span class="divider-line"></span></div>
+    <div class="grid-2-1">
+      <div class="card">
+        <div class="card-head"><div><div class="card-title">Tiền đổ vào mức giá nào nhiều nhất (252 phiên)</div><div class="card-sub">Chia 12 khoảng giá — cột càng cao = mức giá đó giao dịch càng nhiều</div></div></div>
+        <div class="chart-wrap lg"><canvas id="chartVAP"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div><div class="card-title">Trạng thái</div></div></div>
+        <table class="fin-table">
+          <tbody>
+            <tr><td>Mức giá được giao dịch nhiều nhất</td><td><strong>{{POC_BIN}}</strong></td></tr>
+            <tr><td>Mức giá hiện tại đang ở khoảng nào</td><td>{{CURRENT_BIN}}</td></tr>
+            <tr><td>Tập trung ở 3 mức giá giao dịch nhiều nhất</td><td>{{VAP_CONCENTRATION}}</td></tr>
+          </tbody>
+        </table>
+        <div style="margin-top:14px;padding:10px 14px;background:rgba(168,85,247,0.08);border-left:3px solid var(--purple);border-radius:0 10px 10px 0;font-size:13px"><strong style="color:var(--purple)">{{ACCEPTANCE_LABEL}}</strong></div>
+      </div>
+    </div>
+    <div class="callout"><h4>Lưu ý khi đọc — Khối lượng theo mức giá</h4>Đây là xấp xỉ từ dữ liệu ngày; không thay thế sổ lệnh trong phiên (order book), khớp lệnh thực tế hay dữ liệu intraday. Chỉ cho thấy tổng quan tiền đã đổ vào đâu.</div>
+  </section>
+
+  <!-- SECTION 6: MẪU HÌNH & ARCHETYPE -->
+  <section id="setup" class="fade">
+    <div class="section-title"><span class="tag pink">06</span><h2>Lớp mẫu hình phụ trợ</h2><span class="divider-line"></span></div>
+    <div class="card">
+      <div class="card-head"><div><div class="card-title">Setups chiều tăng (8 heuristic)</div><div class="card-sub">Score 0-100 · status · vùng xác nhận — KHÔNG phải tín hiệu mua bán</div></div></div>
+      <table class="fin-table">
+        <thead><tr><th>Mẫu hình</th><th>Điểm sạch<br><span style="font-weight:400;text-transform:none">(0-100)</span></th><th>Trạng thái</th><th>Vùng cần vượt để xác nhận</th><th>Còn cách</th></tr></thead>
+        <tbody>{{SETUPS_TABLE_ROWS}}</tbody>
+      </table>
+      {{SETUPS_EMPTY_NOTE}}
+    </div>
+    <div class="callout info"><h4>📖 Cách đọc mẫu hình này</h4>{{SETUPS_READER_NOTE}}</div>
+  </section>
+
+  <!-- SECTION 7: LƯU Ý KHI ĐỌC (non-conclusion) -->
+  <section id="notes" class="fade">
+    <div class="section-title"><span class="tag amber">07</span><h2>Lưu ý khi đọc</h2><span class="divider-line"></span></div>
+    <div class="callout warn">
+      <h4>⚠️ Đây là hồ sơ mô tả, KHÔNG phải khuyến nghị</h4>
+      <ul>{{NON_CONCLUSION_LIST}}</ul>
+    </div>
+    <div class="disclaimer">
+      <strong>Minh bạch dữ liệu:</strong> Nguồn vnstock (VCI), daily OHLCV. Mẫu {{SAMPLE_SIZE}} phiên ({{SAMPLE_PERIOD}}). Giá theo nghìn đồng. Dữ liệu chưa điều chỉnh corporate actions được kiểm chứng đầy đủ. Regime/membership là snapshot hiện tại, không point-in-time.
+    </div>
+  </section>
+
+  <footer>
+    Hồ sơ cổ phiếu <strong>{{TICKER}}</strong> · mode PROFILE (vn-technical-analysis)<br>
+    Sinh lúc {{GENERATED_AT}} · Schema <code>vn-technical-profile-v1</code> · Ngôn ngữ <code>neutral_descriptive_non_advice</code><br>
+    Methodology từ dashboard phân tích thị trường nội bộ (đã port sang skill)
+  </footer>
+</div>
+
+<button class="back-top" id="backTop" aria-label="Lên đầu trang">↑</button>
+
+<!-- ===== VIZ.JS (inlined từ _viz-shared/ by inject.py) ===== -->
+<script>
+/* =========================================================================
+   VIZ.JS — Chart component registry + Candlestick renderer + Navigation
+   Pattern cốt lõi (học từ Metabase): "chart as plugin".
+   Trước đây: mỗi template có 7+ lệnh `new Chart(...)` riêng, lặp đi lặp lại
+   các config legend/grid/dualAxis. Giờ: registry với base config merge.
+
+   API:
+     viz.chart(canvasId, { type, datasets, scales?, plugins? })
+     viz.renderCandlestick(canvasEl, { candles, volumes, ma20, ma50, high52w, low52w, months })
+     viz.setupNav({ linksSelector, sections?, progressId?, backTopId? })
+     viz.gradient(ctx, c1, c2)              // helper tiện ích
+     viz.neon(c1, c2)                        // helper gradient cho bar fill
+   ========================================================================= */
+(function (global) {
+  'use strict';
+
+  const viz = {};
+
+  /* ---------------------------------------------------------------------
+     Chart.defaults — setup một lần (trước đây lặp 5 lần trong 5 templates)
+     Lấy màu từ CSS custom properties → tự đổi theo data-theme.
+     --------------------------------------------------------------------- */
+  function cssVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+  function readChartColors() {
+    const styles = getComputedStyle(document.documentElement);
+    return {
+      primary:   cssVar('--chart-primary')   || '#a855f7',
+      secondary: cssVar('--chart-secondary') || '#ec4899',
+      tertiary:  cssVar('--chart-tertiary')  || '#06b6d4',
+      pos:       cssVar('--chart-pos')       || '#10d98a',
+      neg:       cssVar('--chart-neg')       || '#ff4d6d',
+      neutral:   cssVar('--chart-neutral')   || '#fbbf24',
+      grid:      cssVar('--chart-grid')      || 'rgba(139,92,246,0.06)',
+      text:      cssVar('--chart-text')      || '#8b8ba7',
+      fontFamily: cssVar('--font-sans')      || 'Inter, sans-serif',
+    };
+  }
+  let CHART_COLORS = readChartColors();
+  function applyChartDefaults() {
+    if (!global.Chart) return;
+    CHART_COLORS = readChartColors();
+    Chart.defaults.color = CHART_COLORS.text;
+    Chart.defaults.font.family = CHART_COLORS.fontFamily;
+    Chart.defaults.borderColor = CHART_COLORS.grid;
+  }
+  applyChartDefaults();
+  // Re-apply khi theme đổi (nếu user swap data-theme sau render)
+  viz.refreshTheme = applyChartDefaults;
+
+  /* ---------------------------------------------------------------------
+     Gradient helper (trước đây lặp ở mỗi template)
+     --------------------------------------------------------------------- */
+  viz.gradient = function (ctx, c1, c2) {
+    const chartArea = ctx.chart.chartArea;
+    const top = chartArea ? chartArea.top : 0;
+    const bottom = chartArea ? chartArea.bottom : 280;
+    const g = ctx.chart.ctx.createLinearGradient(0, top, 0, bottom);
+    g.addColorStop(0, c1);
+    g.addColorStop(1, c2);
+    return g;
+  };
+
+  /* ---------------------------------------------------------------------
+     CHART REGISTRY — "chart as plugin" pattern
+     Base options hợp nhất tự động → không còn lặp legend/grid/dualAxis.
+     --------------------------------------------------------------------- */
+  const SCALE_BASE = { grid: { color: CHART_COLORS.grid } };
+  const LEGEND_BASE = {
+    position: 'top', align: 'end',
+    labels: { usePointStyle: true, boxWidth: 8, font: { size: 11 } },
+  };
+
+  function deepMerge(base, override) {
+    // Shallow-ish merge đủ cho config Chart.js (2 cấp).
+    const out = Array.isArray(base) ? base.slice() : Object.assign({}, base);
+    if (!override) return out;
+    for (const k of Object.keys(override)) {
+      const bv = base[k], ov = override[k];
+      if (bv && typeof bv === 'object' && !Array.isArray(bv) && ov && typeof ov === 'object') {
+        out[k] = Object.assign({}, bv, ov);
+      } else {
+        out[k] = ov;
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Vẽ một chart từ registry. Base options (responsive, legend, grid) tự thêm.
+   * @param {string} canvasId - id thẻ <canvas>
+   * @param {object} spec - { type, data, options?, plugins? }
+   */
+  viz.chart = function (canvasId, spec) {
+    if (!global.Chart) { console.warn('Chart.js chưa load'); return null; }
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) { console.warn('canvas không tìm thấy:', canvasId); return null; }
+
+    const baseOptions = {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: LEGEND_BASE },
+    };
+
+    const opts = deepMerge(baseOptions, spec.options || {});
+    // Đảm bảo scales có grid color mặc định nếu user không override
+    if (opts.scales) {
+      for (const k of Object.keys(opts.scales)) {
+        opts.scales[k] = deepMerge({ grid: { color: CHART_COLORS.grid } }, opts.scales[k]);
+      }
+    }
+
+    return new Chart(canvas, {
+      type: spec.type,
+      data: spec.data,
+      options: opts,
+      plugins: spec.plugins || [],
+    });
+  };
+
+  /* ---------------------------------------------------------------------
+     CANDLESTICK RENDERER — custom Canvas 2D
+     Trước đây: ~100 dòng này lặp 2 lần (technical + profile templates).
+     Giờ: 1 hàm tái dùng. DPR-aware, resize-aware.
+     @param {HTMLCanvasElement} canvas
+     @param {object} data:
+       candles: [{o,h,l,c}]      (giá nghìn đồng)
+       volumes: number[]          (triệu CP)  — optional
+       ma20: number[]             (null cho warmup)
+       ma50: number[]
+       high52w: number
+       low52w: number
+       months: string[]           (nhãn trục X, vd ['7/25','8/25',...])
+       priceUnit?: 'K' | ''       (mặc định 'K' → chia 1000 khi hiển thị)
+     --------------------------------------------------------------------- */
+  viz.renderCandlestick = function (canvas, data) {
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const candles = data.candles || [];
+    if (!candles.length) return;
+    const volumes = data.volumes || [];
+    const ma20 = data.ma20 || [];
+    const ma50 = data.ma50 || [];
+    const high52w = data.high52w;
+    const low52w = data.low52w;
+    const months = data.months || [];
+    const unit = data.priceUnit || 'K'; // 'K' → giá nghìn đồng hiển thị /1000
+    const div = unit === 'K' ? 1000 : 1;
+
+    function draw() {
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      const W = Math.max(100, rect.width);
+      const H = Math.max(100, rect.height);
+      canvas.width = W * dpr; canvas.height = H * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, W, H);
+
+      const priceH = H * 0.65, volH = volumes.length ? H * 0.25 : 0, gap = H * 0.05;
+      const volY = priceH + gap;
+      const padLeft = 50, padRight = 20, padTop = 10, padBot = 20;
+      const chartW = W - padLeft - padRight;
+      const priceTop = padTop, priceBot = priceH - padBot;
+      const volTop = volY + 10, volBot = volY + volH;
+
+      let pMin = Infinity, pMax = -Infinity;
+      candles.forEach(c => { pMin = Math.min(pMin, c.l); pMax = Math.max(pMax, c.h); });
+      const pPad = (pMax - pMin) * 0.05;
+      pMin -= pPad; pMax += pPad;
+      const priceToY = p => priceTop + (priceBot - priceTop) * (pMax - p) / (pMax - pMin);
+
+      const n = candles.length;
+      const candleW = Math.max(3, chartW / n * 0.7);
+      const xStep = chartW / n;
+      const idxToX = i => padLeft + xStep * (i + 0.5);
+
+      // Grid + Y labels
+      ctx.strokeStyle = 'rgba(139,92,246,0.08)'; ctx.lineWidth = 1;
+      ctx.fillStyle = '#5a5a72'; ctx.font = '10px JetBrains Mono'; ctx.textAlign = 'right';
+      for (let g = 0; g <= 5; g++) {
+        const p = pMin + (pMax - pMin) * g / 5;
+        const y = priceToY(p);
+        ctx.beginPath(); ctx.moveTo(padLeft, y); ctx.lineTo(W - padRight, y); ctx.stroke();
+        ctx.fillText(unit === 'K' ? (p / 1000).toFixed(1) + 'K' : p.toFixed(1), padLeft - 5, y + 3);
+      }
+
+      // MA20 (vàng)
+      if (ma20.length) {
+        ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 1.5; ctx.beginPath();
+        let started = false;
+        ma20.forEach((v, i) => {
+          if (v === null || v === undefined) return;
+          const x = idxToX(i), y = priceToY(v);
+          if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+      }
+      // MA50 (cyan)
+      if (ma50.length) {
+        ctx.strokeStyle = '#06b6d4'; ctx.beginPath(); started = false;
+        ma50.forEach((v, i) => {
+          if (v === null || v === undefined) return;
+          const x = idxToX(i), y = priceToY(v);
+          if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+      }
+
+      // Resistance = đỉnh 52 tuần
+      if (high52w != null) {
+        ctx.strokeStyle = 'rgba(255,77,109,0.5)'; ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
+        const resY = priceToY(high52w);
+        ctx.beginPath(); ctx.moveTo(padLeft, resY); ctx.lineTo(W - padRight, resY); ctx.stroke();
+        ctx.fillStyle = 'rgba(255,77,109,0.8)'; ctx.textAlign = 'left'; ctx.font = '9px Inter';
+        ctx.fillText('R ' + (high52w / div).toFixed(unit === 'K' ? 1 : 0) + (unit === 'K' ? 'K' : '') + ' (đỉnh 52W)', padLeft + 4, resY - 5);
+      }
+      // Support = đáy 52 tuần
+      if (low52w != null) {
+        ctx.strokeStyle = 'rgba(16,217,138,0.5)';
+        const supY = priceToY(low52w);
+        ctx.beginPath(); ctx.moveTo(padLeft, supY); ctx.lineTo(W - padRight, supY); ctx.stroke();
+        ctx.fillStyle = 'rgba(16,217,138,0.8)';
+        ctx.fillText('S ' + (low52w / div).toFixed(unit === 'K' ? 1 : 0) + (unit === 'K' ? 'K' : '') + ' (đáy 52W)', padLeft + 4, supY + 12);
+        ctx.setLineDash([]);
+      }
+
+      // Candles
+      candles.forEach((c, i) => {
+        const x = idxToX(i);
+        const isUp = c.c >= c.o;
+        const color = isUp ? '#10d98a' : '#ff4d6d';
+        const yHigh = priceToY(c.h), yLow = priceToY(c.l);
+        const yOpen = priceToY(c.o), yClose = priceToY(c.c);
+        const bodyTop = Math.min(yOpen, yClose);
+        const bodyH = Math.max(1, Math.abs(yClose - yOpen));
+        ctx.strokeStyle = color; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(x, yHigh); ctx.lineTo(x, yLow); ctx.stroke();
+        ctx.fillStyle = color; ctx.fillRect(x - candleW / 2, bodyTop, candleW, bodyH);
+      });
+
+      // Volume sub-panel
+      if (volumes.length) {
+        const maxVol = Math.max(...volumes.filter(v => v > 0));
+        const volToY = v => volBot - (volBot - volTop) * v / maxVol;
+        ctx.fillStyle = '#5a5a72'; ctx.font = '10px JetBrains Mono'; ctx.textAlign = 'right';
+        ctx.fillText(maxVol.toFixed(1) + 'M', padLeft - 5, volTop + 3);
+        ctx.fillText('0', padLeft - 5, volBot);
+        ctx.strokeStyle = 'rgba(139,92,246,0.08)';
+        ctx.beginPath(); ctx.moveTo(padLeft, volBot); ctx.lineTo(W - padRight, volBot); ctx.stroke();
+        candles.forEach((c, i) => {
+          const x = idxToX(i);
+          const isUp = c.c >= c.o;
+          const v = volumes[i];
+          if (v <= 0) return;
+          const y = volToY(v);
+          ctx.fillStyle = isUp ? 'rgba(16,217,138,0.5)' : 'rgba(255,77,109,0.5)';
+          ctx.fillRect(x - candleW / 2, y, candleW, volBot - y);
+        });
+      }
+
+      // X labels (tháng)
+      if (months.length) {
+        ctx.fillStyle = '#5a5a72'; ctx.font = '9px Inter'; ctx.textAlign = 'center';
+        const monthStep = Math.ceil(n / months.length);
+        months.forEach((m, i) => {
+          const idx = i * monthStep + 2;
+          if (idx < n) ctx.fillText(m, idxToX(idx), H - 5);
+        });
+      }
+    }
+
+    draw();
+    let resizeTimer;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(draw, 100);
+    });
+  };
+
+  /* ---------------------------------------------------------------------
+     NAVIGATION — scrollspy + progress bar + back-to-top
+     Trước đây: lặp 2 lần (technical + profile). Giờ: 1 hàm.
+     Tự phát hiện links vs fallback. Tương thích cả `data-target` (dashboard)
+     và `href="#id"` (profile).
+     --------------------------------------------------------------------- */
+  viz.setupNav = function (opts) {
+    opts = opts || {};
+    const links = Array.from(document.querySelectorAll(opts.linksSelector || '.topnav-link, nav a[href^="#"]'));
+    if (!links.length) return;
+
+    const progress = opts.progressId ? document.getElementById(opts.progressId) : document.getElementById('progressBar');
+    const backTop = opts.backTopId ? document.getElementById(opts.backTopId) : document.getElementById('backTop');
+    // Giải section target cho mỗi link (data-target hoặc href)
+    const sections = links.map(link => {
+      const sel = link.dataset.target ? '#' + link.dataset.target : link.getAttribute('href');
+      return { link: link, el: sel ? document.querySelector(sel) : null };
+    }).filter(s => s.el);
+
+    function onScroll() {
+      const sc = window.scrollY + 120;
+      const docH = document.documentElement.scrollHeight - window.innerHeight;
+      if (progress) progress.style.width = (docH > 0 ? (window.scrollY / docH) * 100 : 0) + '%';
+      if (backTop) backTop.classList.toggle('visible', window.scrollY > 600);
+
+      let current = sections[0];
+      for (let i = sections.length - 1; i >= 0; i--) {
+        if (sections[i].el.getBoundingClientRect().top + window.scrollY - 120 <= sc) {
+          current = sections[i]; break;
+        }
+      }
+      links.forEach(l => l.classList.remove('active'));
+      if (current) {
+        current.link.classList.add('active');
+        // Scroll nav để link active vào view
+        const navInner = current.link.closest('.topnav-inner');
+        if (navInner) {
+          const linkRect = current.link.getBoundingClientRect();
+          const navRect = navInner.getBoundingClientRect();
+          if (linkRect.left < navRect.left + 50 || linkRect.right > navRect.right - 50) {
+            navInner.scrollTo({
+              left: current.link.offsetLeft - navInner.offsetWidth / 2 + current.link.offsetWidth / 2,
+              behavior: 'smooth',
+            });
+          }
+        }
+      }
+    }
+
+    links.forEach(link => {
+      link.addEventListener('click', e => {
+        e.preventDefault();
+        const sel = link.dataset.target ? '#' + link.dataset.target : link.getAttribute('href');
+        const target = sel ? document.querySelector(sel) : null;
+        if (target) {
+          const navH = (document.querySelector('.topnav') || {}).offsetHeight || 0;
+          const top = target.getBoundingClientRect().top + window.scrollY - navH - 8;
+          window.scrollTo({ top: top, behavior: 'smooth' });
+        }
+      });
+    });
+
+    if (backTop) {
+      backTop.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+  };
+
+  global.viz = viz;
+})(typeof window !== 'undefined' ? window : this);
+
+</script>
+<script>
+// ===== CHART DATA (fill từ profile JSON — report-time tokens) =====
+const ROLLING_DATA = {{ROLLING_DATA}};
+const DIST_DATA = {{DIST_DATA}};
+const VAP_DATA = {{VAP_DATA}};
+const BENCH_DATA = {{BENCH_DATA}};
+const CANDLESTICK_DATA = {{CANDLESTICK_DATA}};
+const MA20_DATA = {{MA20_DATA}};
+const MA50_DATA = {{MA50_DATA}};
+const HIGH52W_PRICE = {{HIGH52W_PRICE}};
+const LOW52W_PRICE = {{LOW52W_PRICE}};
+const CHART_MONTHS = {{CHART_MONTHS}};
+
+// ===== Candlestick — dùng viz.renderCandlestick() từ _viz-shared (trước đây ~100 dòng trùng lặp) =====
+// CANDLESTICK_DATA = [{d,o,h,l,c,v}] giá nghìn đồng, v = triệu CP → chuẩn hóa sang shape registry mong đợi.
+viz.renderCandlestick(document.getElementById('chartCandlestick'), {
+  candles: CANDLESTICK_DATA.map(c => ({ o: c.o, h: c.h, l: c.l, c: c.c })),
+  volumes: CANDLESTICK_DATA.map(c => c.v),
+  ma20: MA20_DATA,
+  ma50: MA50_DATA,
+  high52w: HIGH52W_PRICE,
+  low52w: LOW52W_PRICE,
+  months: CHART_MONTHS,
+  priceUnit: '' // profile dùng giá nghìn đồng thuần (hiển thị gốc, không chia 1000)
+});
+
+// ===== 4 charts qua registry (pattern "chart as plugin") =====
+viz.chart('chartRolling', {
+  type: 'bar',
+  data: { labels: ROLLING_DATA.labels, datasets: [
+    { label: 'Vị trí so với lịch sử (0-100)', data: ROLLING_DATA.percentiles,
+      backgroundColor: ROLLING_DATA.colors, borderRadius: 6 },
+    { label: 'Return hiện tại (%)', type: 'line', data: ROLLING_DATA.returns,
+      borderColor: '#fbbf24', backgroundColor: 'rgba(251,191,24,0.15)',
+      tension: .3, borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#fbbf24', fill: false, order: 1 }
+  ]},
+  options: {
+    plugins: { legend: { display: true, position: 'top' },
+      tooltip: { callbacks: { label: function (c) { return c.dataset.label + ': ' + c.parsed.y + (c.datasetIndex === 0 ? '/100' : '%'); } } } },
+    scales: { y: { beginAtZero: true }, x: { grid: { display: false } } }
+  }
+});
+
+viz.chart('chartDist', {
+  type: 'bar',
+  data: { labels: DIST_DATA.labels,
+    datasets: [{ label: 'Số phiên', data: DIST_DATA.counts, backgroundColor: DIST_DATA.colors, borderRadius: 5 }] },
+  options: {
+    plugins: { legend: { display: false },
+      tooltip: { callbacks: { label: function (c) { return c.parsed.y + ' phiên'; } } } },
+    scales: { y: { beginAtZero: true, title: { display: true, text: 'Số phiên' } },
+      x: { grid: { display: false }, ticks: { font: { size: 9 } } } }
+  }
+});
+
+viz.chart('chartVAP', {
+  type: 'bar',
+  data: { labels: VAP_DATA.labels,
+    datasets: [{ label: 'Khối lượng (%)', data: VAP_DATA.values, backgroundColor: VAP_DATA.colors, borderRadius: 4 }] },
+  options: {
+    plugins: { legend: { display: false },
+      tooltip: { callbacks: { label: function (c) { return c.parsed.x + '%'; } } } },
+    scales: { x: { beginAtZero: true, title: { display: true, text: '% khối lượng' } },
+      y: { grid: { display: false }, ticks: { font: { size: 9 } } } },
+    indexAxis: 'y'
+  }
+});
+
+viz.chart('chartBench', {
+  type: 'line',
+  data: { labels: BENCH_DATA.labels, datasets: [
+    { label: '{{TICKER}}', data: BENCH_DATA.stock,
+      borderColor: '#a855f7', backgroundColor: 'rgba(168,85,247,0.15)',
+      tension: .3, borderWidth: 3, pointRadius: 0, fill: true },
+    { label: 'VNINDEX', data: BENCH_DATA.bench,
+      borderColor: '#06b6d4', backgroundColor: 'rgba(6,182,212,0.1)',
+      tension: .3, borderWidth: 2, borderDash: [6, 4], pointRadius: 0, fill: false }
+  ]},
+  options: {
+    plugins: { legend: { display: true, position: 'top' },
+      tooltip: { callbacks: { label: function (c) { return c.dataset.label + ': ' + c.parsed.y.toFixed(1); } } } },
+    scales: { y: { title: { display: true, text: 'Base 100' } },
+      x: { grid: { display: false }, ticks: { font: { size: 9 }, maxTicksLimit: 8 } } }
+  }
+});
+
+// ===== Navigation — 1 lời gọi (trước đây ~20 dòng trùng lặp) =====
+viz.setupNav();
+</script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+interface:
+  display_name: "VN Fundamental Analysis"
+  short_description: "Phân tích cơ bản: ROE/ROA/DuPont/CAGR từ BCTC 5 năm"
+  default_prompt: "Phân tích cơ bản [TICKER] — DuPont + CAGR + chất lượng ROE"

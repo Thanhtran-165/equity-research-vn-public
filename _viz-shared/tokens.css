@@ -1,0 +1,148 @@
+/* =========================================================================
+   VIZ DESIGN TOKENS — single source of truth
+   Trước đây: :root block này bị copy-paste 4 lần (dashboard, technical,
+   profile, news templates) → mỗi lần sửa palette phải sửa 4 nơi.
+   Giờ: sửa 1 lần tại đây, chạy `inject.py` để inline vào mọi template.
+
+   THEME SWITCHING: thêm `data-theme="bloomberg"` hoặc `data-theme="corporate"`
+   lên thẻ <html>. Mặc định (không có data-theme) = Fintech.
+   ========================================================================= */
+
+:root {
+  /* --- Background layers --- */
+  --bg-0: #0a0a14;
+  --bg-1: #10101f;
+  --bg-2: #16162a;
+  --card: rgba(28,28,48,0.55);
+  --card-solid: #1a1a2e;
+
+  /* --- Borders --- */
+  --border: rgba(139,92,246,0.18);
+  --border-hot: rgba(236,72,153,0.35);
+
+  /* --- Text --- */
+  --text: #f0f0ff;
+  --text-dim: #8b8ba7;
+  --text-faint: #5a5a72;
+
+  /* --- Accents (neon) --- */
+  --purple: #a855f7;
+  --purple-2: #8b5cf6;
+  --pink: #ec4899;
+  --cyan: #06b6d4;
+  --green: #10d98a;
+  --green-soft: rgba(16,217,138,0.15);
+  --red: #ff4d6d;
+  --red-soft: rgba(255,77,109,0.15);
+  --amber: #fbbf24;
+
+  /* --- Gradients --- */
+  --grad-main: linear-gradient(135deg, #a855f7 0%, #ec4899 100%);
+  --grad-cool: linear-gradient(135deg, #06b6d4 0%, #8b5cf6 100%);
+  --grad-bg: radial-gradient(ellipse at 20% 0%, rgba(139,92,246,0.15) 0%, transparent 50%),
+             radial-gradient(ellipse at 80% 100%, rgba(236,72,153,0.12) 0%, transparent 50%);
+
+  /* --- Typography --- */
+  --font-sans: 'Inter', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* --- Radius --- */
+  --radius-card: 24px;
+  --radius-pill: 999px;
+
+  /* --- Chart palette (for Chart.js — map token colors) --- */
+  --chart-primary: #a855f7;
+  --chart-secondary: #ec4899;
+  --chart-tertiary: #06b6d4;
+  --chart-pos: #10d98a;
+  --chart-neg: #ff4d6d;
+  --chart-neutral: #fbbf24;
+  --chart-grid: rgba(139,92,246,0.06);
+  --chart-text: #8b8ba7;
+}
+
+/* =========================================================================
+   VARIANT 2: Bloomberg Terminal — analyst chuyên nghiệp
+   Active: <html data-theme="bloomberg">
+   ========================================================================= */
+[data-theme="bloomberg"] {
+  --bg-0: #000000;
+  --bg-1: #0a0a0a;
+  --bg-2: #141414;
+  --card: rgba(20,20,20,0.85);
+  --card-solid: #141414;
+
+  --border: #333333;
+  --border-hot: #ffaa00;
+
+  --text: #ffaa00;            /* Bloomberg amber */
+  --text-dim: #888888;
+  --text-faint: #555555;
+
+  --purple: #ffaa00;
+  --pink: #ff6600;
+  --cyan: #00ccff;
+  --green: #00ff66;           /* terminal green */
+  --red: #ff3333;
+  --amber: #ffcc00;
+
+  --grad-main: linear-gradient(135deg, #ffaa00 0%, #ff6600 100%);
+  --grad-cool: linear-gradient(135deg, #00ccff 0%, #ffaa00 100%);
+  --grad-bg: none;            /* flat, no fancy gradients */
+
+  --font-sans: 'Courier New', monospace;
+  --font-mono: 'Courier New', monospace;
+
+  --radius-card: 4px;         /* sharper corners */
+
+  --chart-primary: #ffaa00;
+  --chart-secondary: #00ff66;
+  --chart-tertiary: #00ccff;
+  --chart-pos: #00ff66;
+  --chart-neg: #ff3333;
+  --chart-neutral: #ffcc00;
+  --chart-grid: rgba(255,170,0,0.08);
+  --chart-text: #888888;
+}
+
+/* =========================================================================
+   VARIANT 3: Corporate Sáng — quỹ đầu tư / PDF export
+   Active: <html data-theme="corporate">
+   ========================================================================= */
+[data-theme="corporate"] {
+  --bg-0: #f8f9fc;
+  --bg-1: #ffffff;
+  --bg-2: #edf2f7;
+  --card: #ffffff;
+  --card-solid: #ffffff;
+
+  --border: #e2e8f0;
+  --border-hot: #2c5282;
+
+  --text: #1a202c;
+  --text-dim: #4a5568;
+  --text-faint: #a0aec0;
+
+  --purple: #1a365d;          /* navy */
+  --purple-2: #2c5282;
+  --pink: #c53030;
+  --cyan: #2c7a7b;
+  --green: #2f855a;
+  --red: #c53030;
+  --amber: #c05621;
+
+  --grad-main: linear-gradient(135deg, #1a365d 0%, #2c5282 100%);
+  --grad-cool: linear-gradient(135deg, #2c7a7b 0%, #2c5282 100%);
+  --grad-bg: none;
+
+  --radius-card: 12px;
+
+  --chart-primary: #1a365d;
+  --chart-secondary: #2c5282;
+  --chart-tertiary: #2c7a7b;
+  --chart-pos: #2f855a;
+  --chart-neg: #c53030;
+  --chart-neutral: #c05621;
+  --chart-grid: rgba(26,54,93,0.06);
+  --chart-text: #4a5568;
+}

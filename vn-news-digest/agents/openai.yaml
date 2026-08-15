@@ -1,0 +1,4 @@
+interface:
+  display_name: "VN News Digest"
+  short_description: "Bản tin 30 ngày + sentiment score cho CP VN"
+  default_prompt: "Tạo bản tin 30 ngày cho [TICKER]"

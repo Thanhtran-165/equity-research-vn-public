@@ -1,0 +1,64 @@
+# Bí mật và cấu hình cục bộ
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+credentials*.json
+secrets*.json
+
+# Python / Node / công cụ
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+node_modules/
+.DS_Store
+.vscode/
+.idea/
+.vercel/
+.playwright-mcp/
+
+# Runtime của skill
+.task-state/
+**/.task-state/
+gate-log.jsonl
+kpi-history.jsonl
+cache/
+logs/
+tmp/
+temp/
+work/
+work_*/
+outputs/
+reports/
+screenshots/
+evidence/
+
+# Dữ liệu và artifact sinh ra
+data/
+*_Complete_Report.html
+verified-dashboard-data.json
+news_digest.json
+result.json
+tracker*.json
+*_tracker*.json
+*_result*.json
+*.log
+*.bak
+*.bak2
+*.backup
+*.sqlite
+*.sqlite3
+*.db
+*.duckdb
+
+# Build cache
+.next/
+dist/
+build/
+coverage/

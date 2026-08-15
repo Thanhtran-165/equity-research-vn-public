@@ -1,0 +1,4 @@
+interface:
+  display_name: "VN Valuation Engine"
+  short_description: "Định giá đa phương pháp: DCF/PE/PB/EV-EBITDA/Graham"
+  default_prompt: "Định giá [TICKER] — 9 phương pháp hội tụ + khuyến nghị"

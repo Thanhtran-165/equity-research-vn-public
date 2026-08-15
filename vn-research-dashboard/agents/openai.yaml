@@ -1,0 +1,4 @@
+interface:
+  display_name: "VN Research Dashboard"
+  short_description: "Dashboard HTML equity research (Chart.js + CSS fintech)"
+  default_prompt: "Tạo dashboard HTML cho [TICKER] từ data đã phân tích"

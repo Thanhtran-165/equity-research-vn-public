@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zcode.local/skills/equity-research-vn/task-state.schema.json",
+  "title": "equity-research-vn task-state contract (P1-02 — Wave 1)",
+  "description": "Canonical schema cho .task-state/task-state.json. Phase prompts, init script, fixture và verifier (REQ-068) phải đọc cùng schema này — KHÔNG hardcode keys rải rác.",
+  "type": "object",
+  "required": ["ticker", "phases"],
+  "properties": {
+    "ticker": {"type": "string", "pattern": "^[A-Z][A-Z0-9]{1,9}$"},
+    "work_dir": {"type": "string"},
+    "created_at": {"type": "string"},
+    "investment_amount": {"type": ["number", "null"]},
+    "phases": {
+      "type": "object",
+      "propertyNames": {"enum": ["phase0_sponsor", "phase1_data", "phase2_fundamental", "phase3_valuation", "phase4a_tech_active", "phase4b_tech_profile", "phase5_news", "phase6_dashboard", "phase7_deploy"]},
+      "additionalProperties": false,
+      "properties": {
+        "phase0_sponsor": {"$ref": "#/$defs/phase"},
+        "phase1_data": {"$ref": "#/$defs/phase"},
+        "phase2_fundamental": {"$ref": "#/$defs/phase"},
+        "phase3_valuation": {"$ref": "#/$defs/phase"},
+        "phase4a_tech_active": {"$ref": "#/$defs/phase"},
+        "phase4b_tech_profile": {"$ref": "#/$defs/phase"},
+        "phase5_news": {"$ref": "#/$defs/phase"},
+        "phase6_dashboard": {"$ref": "#/$defs/phase"},
+        "phase7_deploy": {"$ref": "#/$defs/phase"}
+      }
+    }
+  },
+  "$defs": {
+    "phase": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": {"enum": ["pending", "in_progress", "completed", "blocked", "incomplete", "deferred"]},
+        "result": {"type": "object"},
+        "error": {"type": "string"}
+      }
+    }
+  },
+  "x_min_result_keys": {
+    "phase0_sponsor": ["investment_amount", "fiscal_year_type"],
+    "phase1_data": ["data_source", "split_audit"],
+    "phase2_fundamental": ["eps", "roe", "cagr"],
+    "phase3_valuation": ["targets", "pe", "pb"],
+    "phase4a_tech_active": ["tech_score", "verdict"],
+    "phase4b_tech_profile": ["archetype"],
+    "phase5_news": ["sentiment"],
+    "phase6_dashboard": ["artifact_path"]
+  },
+  "x_nullable_result_keys": {
+    "phase0_sponsor": ["investment_amount"],
+    "phase2_fundamental": ["cagr"],
+    "phase3_valuation": ["pe", "pb"]
+  }
+}
