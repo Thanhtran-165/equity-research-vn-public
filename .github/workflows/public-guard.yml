@@ -1,0 +1,39 @@
+name: Public repository guard
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-public-tree:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-runtime.txt
+
+      - name: Reject generated, private, or oversized files
+        run: python scripts/check_public_repo.py
+
+      - name: Validate the 76-requirement registry
+        run: python scripts/tests/requirements-lint.py
+
+      - name: Run portable regression tests
+        env:
+          EQUITY_SKILL_DIR: ${{ github.workspace }}
+        run: |
+          for test_file in scripts/tests/test_*.py; do
+            python "$test_file"
+          done

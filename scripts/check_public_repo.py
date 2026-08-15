@@ -12,6 +12,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MAX_BYTES = 5 * 1024 * 1024
 
+ALLOWED_ROOT_FILES = {
+    ".gitignore", ".verifier-hash", "CHANGELOG.md", "DISCLAIMER.md", "LICENSE",
+    "PUBLIC_RELEASE.md", "README.md", "SECURITY.md", "SKILL.md", "VERSION",
+    "requirements-phase-map.yaml", "requirements-runtime.txt", "requirements.yaml",
+    "task-state.schema.json",
+}
+ALLOWED_TOP_LEVEL_DIRS = {
+    ".github", "_viz-shared", "config", "phases", "references", "scripts",
+    "vn-financial-data-collector", "vn-fundamental-analysis", "vn-news-digest",
+    "vn-research-dashboard", "vn-technical-analysis", "vn-valuation-engine",
+}
+
 FORBIDDEN_PARTS = {
     ".task-state", "__pycache__", ".next", "node_modules", "evidence",
     "screenshots", "work_p0", "logs", "cache", "tmp", "temp",
@@ -45,6 +57,10 @@ def main() -> int:
     files = tracked_files()
     for path in files:
         rel = path.relative_to(ROOT)
+        if len(rel.parts) == 1 and rel.name not in ALLOWED_ROOT_FILES:
+            issues.append(f"unexpected root file: {rel}")
+        if len(rel.parts) > 1 and rel.parts[0] not in ALLOWED_TOP_LEVEL_DIRS:
+            issues.append(f"unexpected top-level directory: {rel.parts[0]}")
         if any(part in FORBIDDEN_PARTS for part in rel.parts):
             issues.append(f"forbidden path: {rel}")
         if path.name in FORBIDDEN_NAMES or path.suffix.lower() in FORBIDDEN_SUFFIXES:
