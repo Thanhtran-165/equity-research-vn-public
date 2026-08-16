@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression cho adapter schema BCTC vnstock_data 3.0 và 3.2.7."""
+"""Regression cho adapter schema BCTC vnstock_data 3.0, 3.2.7 và 3.2.8."""
 
 import sys
 import unittest
@@ -143,6 +143,69 @@ class StatementAdapterTests(unittest.TestCase):
     def test_missing_period_fails_closed(self):
         with self.assertRaises(StatementSchemaError):
             normalize_statement(pd.DataFrame({"value": [1, 2]}), "income")
+
+    def test_vnstock_328_long_schema_uses_standardized_ids(self):
+        raw = pd.DataFrame({
+            "period": ["2025", "2025", "2024", "2024"],
+            "id": ["IS_NET_REVENUE", "IS_NET_PROFIT_AFTER_TAX", "IS_NET_REVENUE", "IS_NET_PROFIT_AFTER_TAX"],
+            "name": ["Net Revenue", "Net Profit", "Net Revenue", "Net Profit"],
+            "order": [1, 2, 1, 2],
+            "level": [1, 1, 1, 1],
+            "unit": ["VNĐ"] * 4,
+            "value": [200.0, 30.0, 180.0, 25.0],
+        })
+        got = normalize_statement(raw, "income")
+        self.assertEqual(list(got.index), ["2024", "2025"])
+        self.assertEqual(got.loc["2025", "Net sales"], 200.0)
+        self.assertEqual(got.loc["2025", "Net profit/(loss) after tax"], 30.0)
+
+    def test_vnstock_328_standardized_fields_cover_four_statement_groups(self):
+        income = pd.DataFrame({
+            "period": ["2025"],
+            "id": ["IS_TOTAL_NET_REVENUE_FROM_INSURANCE_BUSINESS"],
+            "value": [456.0],
+        })
+        balance = pd.DataFrame({
+            "period": ["2025"],
+            "id": ["BS_TOTAL_ASSETS"],
+            "value": [1000.0],
+        })
+        cash = pd.DataFrame({
+            "period": ["2025"],
+            "id": ["CF_NET_CASH_FLOWS_FROM_OPERATING_ACTIVITIES"],
+            "value": [55.0],
+        })
+        self.assertEqual(normalize_statement(income, "income").loc["2025", "Net sales"], 456.0)
+        self.assertEqual(normalize_statement(balance, "balance").loc["2025", "Total Assets"], 1000.0)
+        self.assertEqual(
+            normalize_statement(cash, "cash_flow").loc[
+                "2025", "Net cash inflows/(outflows) from operating activities"
+            ],
+            55.0,
+        )
+
+    def test_vnstock_328_long_duplicate_period_id_fails_closed(self):
+        raw = pd.DataFrame({
+            "period": ["2025", "2025"],
+            "id": ["IS_NET_REVENUE", "IS_NET_REVENUE"],
+            "value": [1.0, 2.0],
+        })
+        with self.assertRaisesRegex(StatementSchemaError, "trùng"):
+            normalize_statement(raw, "income")
+
+    def test_zero_is_preserved_in_vnstock_328_long_schema(self):
+        raw = pd.DataFrame({
+            "period": ["2025"], "id": ["IS_NET_REVENUE"], "value": [0.0]
+        })
+        got = normalize_statement(raw, "income")
+        self.assertEqual(got.loc["2025", "Net sales"], 0.0)
+
+    def test_nan_is_preserved_as_missing_in_vnstock_328_long_schema(self):
+        raw = pd.DataFrame({
+            "period": ["2025"], "id": ["IS_NET_REVENUE"], "value": [float("nan")]
+        })
+        got = normalize_statement(raw, "income")
+        self.assertTrue(pd.isna(got.loc["2025", "Net sales"]))
 
 
 if __name__ == "__main__":

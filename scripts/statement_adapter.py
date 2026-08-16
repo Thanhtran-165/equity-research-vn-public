@@ -2,9 +2,10 @@
 """Chuẩn hóa BCTC vnstock_data cũ/mới về contract nội bộ ổn định.
 
 vnstock_data 3.0 trả bảng theo kỳ ở index và tên chỉ tiêu tiếng Anh, trong khi
-3.2.7 trả bảng theo hàng với cột ``period`` và tên chỉ tiêu dạng slug. Adapter
-này giữ nguyên dữ liệu nguồn, chỉ bổ sung các alias canonical mà builder và
-verifier đã kiểm định sử dụng.
+3.2.7 trả bảng theo hàng với cột ``period`` và tên chỉ tiêu dạng slug. Từ
+3.2.8, API chuẩn trả ``long`` (period/id/value), còn ``time_series`` trả kỳ ×
+ID. Adapter này giữ nguyên dữ liệu nguồn, chỉ bổ sung các alias canonical mà
+builder và verifier đã kiểm định sử dụng.
 """
 
 from __future__ import annotations
@@ -50,12 +51,44 @@ def _wide_to_rows(frame: pd.DataFrame) -> pd.DataFrame | None:
     return out
 
 
+def _long_to_rows(frame: pd.DataFrame, statement: str) -> pd.DataFrame:
+    """Chuyển long ``period/id/value`` sang period×field mà không aggregate.
+
+    Không dùng ``pivot_table`` vì mặc định của pandas có thể aggregate dữ liệu
+    trùng. Một cặp ``(period, id)`` trùng là schema không xác định và phải chặn
+    fail-closed; không được chọn một dòng hoặc cộng hai dòng lại.
+    """
+    required = {"period", "id", "value"}
+    if not required.issubset(frame.columns):
+        raise StatementSchemaError(
+            f"{statement}: long schema thiếu cột {sorted(required - set(frame.columns))}"
+        )
+    raw = frame[["period", "id", "value"]].copy()
+    raw["period"] = raw["period"].map(_period_text)
+    raw["id"] = raw["id"].astype(str).str.strip()
+    if raw["id"].eq("").any() or raw["id"].eq("nan").any():
+        raise StatementSchemaError(f"{statement}: long schema có id rỗng")
+    duplicate_mask = raw.duplicated(["period", "id"], keep=False)
+    if duplicate_mask.any():
+        duplicates = raw.loc[duplicate_mask, ["period", "id"]].drop_duplicates()
+        examples = [tuple(row) for row in duplicates.head(5).itertuples(index=False, name=None)]
+        raise StatementSchemaError(
+            f"{statement}: long schema trùng (period,id), không được aggregate {examples}"
+        )
+    out = raw.pivot(index="period", columns="id", values="value")
+    out.columns.name = None
+    out.index.name = "period"
+    return out
+
+
 def normalize_statement(frame: pd.DataFrame, statement: str) -> pd.DataFrame:
     """Chuẩn hóa một payload income/balance/cash-flow thành period×field."""
     if frame is None or not isinstance(frame, pd.DataFrame) or frame.empty:
         raise StatementSchemaError(f"{statement}: payload rỗng hoặc không phải DataFrame")
 
-    if "period" in frame.columns:
+    if {"period", "id", "value"}.issubset(frame.columns):
+        out = _long_to_rows(frame, statement)
+    elif "period" in frame.columns:
         out = frame.copy()
         out["period"] = out["period"].map(_period_text)
         out = out.set_index("period", drop=True)
@@ -131,6 +164,9 @@ def _add_canonical_fields(frame: pd.DataFrame, statement: str) -> pd.DataFrame:
     out = frame.copy()
     if statement == "income":
         _alias(out, "Net sales", (
+            # ID VAS chuẩn của vnstock_data 3.2.8.
+            "IS_NET_REVENUE",
+            "IS_TOTAL_NET_REVENUE_FROM_INSURANCE_BUSINESS",
             "3_doanh_thu_thuan_ve_ban_hang_va_cung_cap_dich_vu",
             # Chứng khoán: dùng doanh thu thuần, tuyệt đối không bắt substring
             # ``deduction_from_revenue`` (khoản giảm trừ, thường là NaN).
@@ -140,7 +176,11 @@ def _add_canonical_fields(frame: pd.DataFrame, statement: str) -> pd.DataFrame:
             "5_1_doanh_thuan_bh_va_ccdv",
             "Net revenue", "Revenue", "Doanh thu thuần",
         ))
+        _alias(out, "Total Operating Income", (
+            "IS_TOTAL_OPERATING_INCOME",
+        ))
         _alias(out, "Attributable to parent company", (
+            "IS_PROFIT_AFTER_TAX_FOR_SHAREHOLDERS_OF_PARENT_COMPANY",
             "11_1_loi_nhuan_sau_thue_phan_bo_cho_chu_so_huu",
             "31_loi_nhuan_sau_thue_cua_co_dong_cua_cong_ty_me",
             "loi_nhuan_sau_thue_cua_co_dong_cua_cong_ty_me",
@@ -148,6 +188,7 @@ def _add_canonical_fields(frame: pd.DataFrame, statement: str) -> pd.DataFrame:
             "Net profit attributable to shareholders",
         ))
         _alias(out, "Net profit/(loss) after tax", (
+            "IS_NET_PROFIT_AFTER_TAX",
             "xi_loi_nhuan_ke_toan_sau_thue_tndn",
             "29_loi_nhuan_sau_thue_thu_nhap_doanh_nghiep",
             "xiii_loi_nhuan_sau_thue_xi_xii",
@@ -155,12 +196,14 @@ def _add_canonical_fields(frame: pd.DataFrame, statement: str) -> pd.DataFrame:
             "Attributable to parent company", "Profit after tax",
         ))
         _alias(out, "EPS basic (VND)", (
+            "IS_BASIC_EARNINGS_PER_SHARE",
             "13_1_lai_co_ban_tren_co_phieu_dong_1_co_phieu_vn",
             "32_lai_co_ban_tren_co_phieu_vn",
             "19_lai_co_ban_tren_co_phieu_vn", "lai_co_ban_tren_co_phieu_bctc_vnd",
             "EPS basic", "Earnings per share",
         ))
         _alias(out, "Gross Profit", (
+            "IS_GROSS_PROFIT",
             "5_loi_nhuan_gop_ve_ban_hang_va_cung_cap_dich_vu", "Lợi nhuận gộp",
         ))
         if "Total Operating Income" not in out.columns:
@@ -177,27 +220,36 @@ def _add_canonical_fields(frame: pd.DataFrame, statement: str) -> pd.DataFrame:
             if present:
                 out["Total Operating Income"] = pd.concat(present, axis=1).sum(axis=1, min_count=1)
     elif statement == "balance":
-        _alias(out, "Total Assets", ("total_assets", "a_tai_san"))
+        _alias(out, "Total Assets", ("BS_TOTAL_ASSETS", "total_assets", "a_tai_san"))
         _alias(out, "Total Liabilities", (
+            "BS_TOTAL_LIABILITIES",
             "a_no_phai_tra_300_210_330", "a_no_phai_tra_300_310_340",
             "liabilities", "c_no_phai_tra", "a_no_phai_tra",
         ))
         _alias(out, "Owner's Equity", (
+            "BS_OWNERS_EQUITY", "BS_EQUITY",
             "b_von_chu_so_huu_400_410_430", "b_von_chu_so_huu_400_410_420",
             "d_von_chu_so_huu", "b_von_chu_so_huu", "viii_von_va_cac_quy",
         ))
         if "Owner's Equity" not in out.columns and {"Total Assets", "Total Liabilities"}.issubset(out.columns):
             out["Owner's Equity"] = out["Total Assets"] - out["Total Liabilities"]
-        _alias(out, "Inventory", ("iv_hang_ton_kho", "1_hang_ton_kho", "Inventories", "Hàng tồn kho"))
-        _alias(out, "Paid-in capital", ("1_von_gop_cua_chu_so_huu", "a_von_dieu_le", "Charter capital", "Vốn điều lệ"))
+        _alias(out, "Inventory", (
+            "BS_INVENTORIES", "iv_hang_ton_kho", "1_hang_ton_kho", "Inventories", "Hàng tồn kho"
+        ))
+        _alias(out, "Paid-in capital", (
+            "BS_CHARTER_CAPITAL", "BS_CAPITAL_FROM_OWNERS",
+            "1_von_gop_cua_chu_so_huu", "a_von_dieu_le", "Charter capital", "Vốn điều lệ"
+        ))
     elif statement == "cash_flow":
         _alias(out, "Net cash inflows/(outflows) from operating activities", (
+            "CF_NET_CASH_FLOWS_FROM_OPERATING_ACTIVITIES",
             "luu_chuyen_tien_thuan_tu_hoat_dong_kinh_doanh_chung_khoan",
             "luu_chuyen_tien_thuan_tu_hdkd",
             "luu_chuyen_tien_thuan_tu_hoat_dong_kinh_doanh",
             "net_cash_flows_from_operating_activities", "Net cash from operating activities",
         ))
         _alias(out, "Purchases of fixed assets and other long term assets", (
+            "CF_PAYMENTS_FOR_FIXED_ASSETS",
             "payment_for_fixed_assets_constructions_and_other_long_term_assets",
             "purchase_of_fixed_assets", "Mua sắm tài sản",
         ))

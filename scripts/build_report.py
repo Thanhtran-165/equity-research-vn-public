@@ -15,6 +15,7 @@ from statement_adapter import combine_statements, completed_annual_rows
 from task_state_runtime import sponsor_period_count
 from vnstock_compat import (
     CompatibilityGateError,
+    fetch_statement_frame,
     probe_api_surface,
     run_schema_gate,
     validate_reused_schema_fingerprint,
@@ -182,7 +183,7 @@ def fetch():
         # không phát sinh endpoint call mới.
         runtime = probe_api_surface(vnstock_data, fundamental=fundamental, equity_api=equity_api)
         def _statement(name, period):
-            return getattr(equity_api, name)(period=period, lang='en')
+            return fetch_statement_frame(equity_api, name, period, runtime=runtime, lang='en')
         raw_frames = {
             'income': (_statement('income_statement', 'quarter'),
                        _statement('income_statement', 'year')),
@@ -226,6 +227,11 @@ def fetch():
     # ngân hàng/lender dùng Total Operating Income. SSI/BVH vẫn có canonical
     # Net sales do adapter ánh xạ từ schema riêng; không được ép về TOI.
     specialized_financial_markers = {
+        # vnstock_data 3.2.8 VAS IDs (giữ cả alias 3.2.7 bên dưới).
+        'IS_TOTAL_OPERATING_INCOME',
+        'IS_TOTAL_NET_REVENUE_FROM_INSURANCE_BUSINESS',
+        'IS_GAINS_FROM_FINANCIAL_ASSETS_AT_FAIR_VALUE_THROUGH_PROFIT_OR_LOSS_FVTPL',
+        'IS_REVENUE_FROM_BROKERAGE_SERVICES',
         'net_revenue',
         '5_doanh_thu_thuan_hdkd_bh_10_03_04',
         'luu_chuyen_tien_thuan_tu_hoat_dong_kinh_doanh_chung_khoan',
@@ -287,6 +293,11 @@ def fetch():
     # inventory THẬT từ balance sheet (P0-1: cấm fallback giả lập từ gross profit)
     inv_col=next((c for c in bal5.columns if re.search(r'Inventory|Hàng tồn kho|Inventories',c,re.I)),None)
     inventory=[float(bal5[inv_col].iloc[i]) if bal5[inv_col].iloc[i] == bal5[inv_col].iloc[i] else None for i in range(len(bal5))] if inv_col else [None]*len(years)
+    # Một số định chế (đặc biệt chứng khoán) có ID inventories nhưng provider
+    # biểu diễn "không áp dụng" thành toàn 0. Không đổi số 0 của doanh nghiệp
+    # thường; chỉ financial-institution + toàn zero mới chuyển về N/A.
+    if specialized_financial and inventory and not any(x not in (None, 0) for x in inventory):
+        inventory = [None] * len(years)
     # gross profit (for chartEQ / DATA)
     gp_col=next((c for c in inc5.columns if re.search(r'Gross Profit|Lợi nhuận gộp',c,re.I)),None)
     gross=[float(inc5[gp_col].iloc[i]) if inc5[gp_col].iloc[i] == inc5[gp_col].iloc[i] else None for i in range(len(inc5))] if gp_col and gp_col in inc5.columns else [None]*len(years)

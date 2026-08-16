@@ -37,8 +37,10 @@ Nếu full builder báo thiếu dependency Sponsor, quay lại mục này. Khôn
 
 ### Compatibility Gate vnstock_data
 
-Public builder hiện chỉ hỗ trợ cặp đã kiểm định `distribution vnstock_data 3.2.7`
-và `module.__version__ 3.2.2`. Registry
+Public builder hiện hỗ trợ các cặp đã kiểm định `distribution vnstock_data 3.2.7`
+hoặc `3.2.8`, cùng `module.__version__ 3.2.2`. Với 3.2.7 builder giữ lời gọi
+legacy; với 3.2.8 builder yêu cầu `format=time_series` và ánh xạ các VAS ID
+chuẩn về contract nội bộ. Registry
 machine-readable nằm tại `config/vnstock_compat_registry.json`; gate kiểm tra
 version exact, API surface bắt buộc và schema DataFrame trước khi render. Schema
 không nhận dạng, thiếu canonical field hoặc version/API chưa được kiểm định đều

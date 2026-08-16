@@ -82,13 +82,95 @@ def _validate_version_pair(
         for pair in pairs
     )
     if not exact:
+        allowed = ", ".join(
+            f"{pair.get('distribution_version')}/{','.join(map(str, pair.get('module_versions', [])))}"
+            for pair in pairs
+        ) or "không có"
         raise CompatibilityGateError(
             "Cặp version vnstock_data chưa được kiểm định: "
             f"distribution={distribution_version or 'không xác định'}, "
             f"module={module_version or 'không xác định'}. "
-            "Registry hiện chỉ cho phép đúng cặp distribution 3.2.7/module 3.2.2; "
-            "hãy cài đúng virtualenv hoặc mở quy trình kiểm định nâng version."
+            f"Registry hiện chỉ cho phép: {allowed}; hãy cài đúng virtualenv "
+            "hoặc mở quy trình kiểm định nâng version."
         )
+
+
+def _runtime_for_statement(registry: Mapping[str, Any] | None = None) -> dict[str, str]:
+    """Đọc cặp version hiện tại mà không gọi endpoint.
+
+    Builder và verifier dùng cùng một quyết định format. Không thử format khác
+    sau khi API đã trả lỗi; lỗi gọi API phải nổi lên để fail-closed.
+    """
+    registry = registry or load_registry()
+    try:
+        module = importlib.import_module(str(registry.get("provider", "vnstock_data")))
+    except (ImportError, ModuleNotFoundError) as exc:
+        raise CompatibilityGateError(
+            f"Không import được {registry.get('provider', 'vnstock_data')} "
+            f"bằng interpreter hiện tại ({sys.executable})."
+        ) from exc
+    dist_version, module_version = _version_candidates(module, registry)
+    _validate_version_pair(dist_version, module_version, registry)
+    return {
+        "distribution_version": str(dist_version),
+        "module_version": str(module_version),
+    }
+
+
+def statement_request_kwargs(
+    runtime: Mapping[str, Any],
+    period: str,
+    *,
+    lang: str = "en",
+    registry: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Trả kwargs exact theo distribution đã kiểm định.
+
+    3.2.7 giữ lời gọi cũ. 3.2.8 yêu cầu ``time_series`` để tránh long payload
+    bị hiểu nhầm là period×field. Không có fallback mù khi lời gọi thực tế lỗi.
+    """
+    registry = registry or load_registry()
+    distribution = str(runtime.get("distribution_version") or "")
+    formats = registry.get("statement_formats", {})
+    spec = formats.get(distribution)
+    if not isinstance(spec, Mapping):
+        raise CompatibilityGateError(
+            f"Chưa có statement format contract cho vnstock_data {distribution}."
+        )
+    kwargs: dict[str, Any] = {"period": period, "lang": lang}
+    requested = spec.get("request_format")
+    if requested:
+        kwargs["format"] = requested
+    return kwargs
+
+
+def fetch_statement_frame(
+    equity_api: Any,
+    method_name: str,
+    period: str,
+    *,
+    runtime: Mapping[str, Any] | None = None,
+    lang: str = "en",
+    registry: Mapping[str, Any] | None = None,
+) -> Any:
+    """Gọi một statement bằng format đã được version gate.
+
+    ``TypeError``/lỗi server không kích hoạt thử lại bằng format khác; bên gọi
+    nhận lỗi và builder dừng trước khi render.
+    """
+    registry = registry or load_registry()
+    runtime = dict(runtime or _runtime_for_statement(registry))
+    kwargs = statement_request_kwargs(runtime, period, lang=lang, registry=registry)
+    member = getattr(equity_api, method_name, None)
+    if not callable(member):
+        raise CompatibilityGateError(f"API statement thiếu method {method_name}.")
+    try:
+        return member(**kwargs)
+    except Exception as exc:
+        raise CompatibilityGateError(
+            f"Gọi vnstock_data {method_name} ({runtime.get('distribution_version')}, "
+            f"format={kwargs.get('format', 'legacy-default')}) thất bại: {exc}"
+        ) from exc
 
 
 def _check_callable(
@@ -102,7 +184,7 @@ def _check_callable(
     if not callable(member):
         raise CompatibilityGateError(
             f"Thiếu API bắt buộc vnstock_data: {label or path}. "
-            "Hãy cài đúng phiên bản 3.2.7 hoặc cập nhật registry sau khi kiểm định; "
+            "Hãy cài đúng cặp version trong registry hoặc cập nhật registry sau khi kiểm định; "
             "không có fallback community."
         )
     if not required:
@@ -119,7 +201,7 @@ def _check_callable(
     if missing:
         raise CompatibilityGateError(
             f"API {label or path} thiếu tham số bắt buộc {missing}. "
-            "Hãy dùng phiên bản vnstock_data 3.2.7 đã kiểm định hoặc cập nhật gate "
+            "Hãy dùng cặp version trong registry đã kiểm định hoặc cập nhật gate "
             "cùng fixture/test khi nâng version."
         )
 
@@ -146,7 +228,7 @@ def probe_api_surface(
             raise CompatibilityGateError(
                 "Không import được vnstock_data bằng interpreter hiện tại "
                 f"({sys.executable}). Hãy kích hoạt đúng virtualenv, cài Sponsor "
-                "vnstock_data 3.2.7 rồi chạy lại; không có fallback community."
+                "vnstock_data theo cặp version trong registry rồi chạy lại; không có fallback community."
             ) from exc
 
     dist_version, module_version = _version_candidates(module, registry)
@@ -171,8 +253,8 @@ def probe_api_surface(
         methods = class_spec.get("methods", {})
         for method_name, method_spec in methods.items():
             if class_name == "Fundamental" and method_name == "equity":
-                # Unified UI 3.2.7 exposes equity as a property returning a
-                # callable proxy on the instance, not as a class method.
+                # Unified UI exposes equity as a property returning a callable
+                # proxy trên instance, không phải class method.
                 _check_callable(
                     fundamental,
                     method_name,
@@ -199,7 +281,10 @@ def probe_api_surface(
     return {
         "provider": registry.get("provider", "vnstock_data"),
         "tested_version": registry.get("tested_version"),
-        "tested_distribution_version": registry.get("authoritative_distribution_version"),
+        # Ghi đúng distribution thực tế của payload, không gán mọi artifact về
+        # phiên bản mới nhất trong registry; nhờ vậy 3.2.7 và 3.2.8 đều có thể
+        # reuse với cùng registry freeze.
+        "tested_distribution_version": dist_version,
         "distribution_version": dist_version,
         "module_version": module_version,
         "interpreter": sys.executable,
@@ -223,6 +308,8 @@ def _period_like(value: Any) -> bool:
 
 def _shape_mode(frame: Any) -> str:
     columns = list(getattr(frame, "columns", []))
+    if {"period", "id", "value"}.issubset(columns):
+        return "long_period_id_rows"
     if "period" in columns:
         return "period_column_rows"
     index = list(getattr(frame, "index", []))
@@ -310,7 +397,9 @@ def fingerprint_statement(
         "statement": statement,
         "shape_mode": shape_mode,
         "period_representation": {
-            "source": "period_column" if shape_mode == "period_column_rows" else (
+            "source": (
+                "long_period_id_value" if shape_mode == "long_period_id_rows" else
+                "period_column" if shape_mode == "period_column_rows" else
                 "period_index" if shape_mode == "period_index_rows" else "item_columns"
             ),
             "kinds": period_kinds,
@@ -384,7 +473,9 @@ def run_schema_gate(
         "registry_sha256": registry_sha256(registry_path),
         "provider": registry.get("provider"),
         "tested_version": registry.get("tested_version"),
-        "tested_distribution_version": registry.get("authoritative_distribution_version"),
+        "tested_distribution_version": runtime.get(
+            "distribution_version", registry.get("authoritative_distribution_version")
+        ),
         "runtime": runtime,
         "frames": fingerprints,
         "provenance": {
@@ -432,25 +523,21 @@ def validate_reused_schema_fingerprint(
             "Fingerprint --reuse không khớp SHA registry hiện tại; artifact hoặc registry đã thay đổi. "
             "Hãy fetch lại trước khi render."
         )
-    if payload.get("tested_distribution_version") != registry.get("authoritative_distribution_version"):
+    runtime = payload.get("runtime") or {}
+    runtime_distribution = runtime.get("distribution_version")
+    if payload.get("tested_distribution_version") != runtime_distribution:
         raise CompatibilityGateError(
-            "Fingerprint --reuse không khớp distribution version đã kiểm định. "
+            "Fingerprint --reuse không khớp distribution version của payload. "
             "Hãy fetch lại bằng cặp version trong registry hiện tại."
         )
-    runtime = payload.get("runtime") or {}
-    if runtime.get("distribution_version") != registry.get("authoritative_distribution_version"):
-        raise CompatibilityGateError(
-            "Fingerprint --reuse có runtime distribution version không được registry hiện tại cho phép."
-        )
-    allowed_modules = {
-        str(version)
+    allowed_pairs = {
+        (str(pair.get("distribution_version")), str(module))
         for pair in registry.get("supported_version_pairs", [])
-        if str(pair.get("distribution_version")) == str(registry.get("authoritative_distribution_version"))
-        for version in pair.get("module_versions", [])
+        for module in pair.get("module_versions", [])
     }
-    if runtime.get("module_version") not in allowed_modules:
+    if (str(runtime_distribution), str(runtime.get("module_version"))) not in allowed_pairs:
         raise CompatibilityGateError(
-            "Fingerprint --reuse có module version ngoài cặp đã kiểm định; hãy fetch lại."
+            "Fingerprint --reuse có cặp runtime version không được registry hiện tại cho phép."
         )
     stored_hash = payload.get("fingerprint_sha256")
     if not stored_hash:

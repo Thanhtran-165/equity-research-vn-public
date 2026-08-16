@@ -19,6 +19,7 @@ from vnstock_compat import (  # noqa: E402
     fingerprint_statement,
     probe_api_surface,
     run_schema_gate,
+    statement_request_kwargs,
 )
 
 
@@ -111,11 +112,34 @@ def new_frames():
     }
 
 
+def long_frames():
+    def frame(period, rows):
+        return pd.DataFrame({
+            "period": [period] * len(rows),
+            "id": [row[0] for row in rows],
+            "value": [row[1] for row in rows],
+        })
+    return {
+        "income": (
+            frame("2025-Q1", [("IS_NET_REVENUE", 100), ("IS_NET_PROFIT_AFTER_TAX", 10)]),
+            frame("2024", [("IS_NET_REVENUE", 400), ("IS_NET_PROFIT_AFTER_TAX", 40)]),
+        ),
+        "balance": (
+            frame("2025-Q1", [("BS_TOTAL_ASSETS", 1000), ("BS_EQUITY", 300)]),
+            frame("2024", [("BS_TOTAL_ASSETS", 900), ("BS_EQUITY", 280)]),
+        ),
+        "cash_flow": (
+            frame("2025-Q1", [("CF_NET_CASH_FLOWS_FROM_OPERATING_ACTIVITIES", 20)]),
+            frame("2024", [("CF_NET_CASH_FLOWS_FROM_OPERATING_ACTIVITIES", 80)]),
+        ),
+    }
+
+
 class CompatibilityGateTests(unittest.TestCase):
     def test_official_version_pair_and_dynamic_instance_surface(self):
         with patch("vnstock_compat.importlib.metadata.version", return_value="3.2.7"):
             result = probe_api_surface(fake_module())
-        self.assertEqual(result["tested_version"], "3.2.7")
+        self.assertEqual(result["tested_version"], "3.2.8")
         self.assertFalse(result["api_surface_checked"])
         self.assertEqual(result["distribution_version"], "3.2.7")
         self.assertEqual(result["module_version"], "3.2.2")
@@ -143,6 +167,10 @@ class CompatibilityGateTests(unittest.TestCase):
         with patch("vnstock_compat.importlib.metadata.version", return_value="3.2.7"):
             return probe_api_surface(fake_module(), fundamental=FakeFundamental())
 
+    def _runtime_328(self):
+        with patch("vnstock_compat.importlib.metadata.version", return_value="3.2.8"):
+            return probe_api_surface(fake_module(), fundamental=FakeFundamental())
+
     def _registry_copy(self, directory):
         path = Path(directory) / "registry.json"
         shutil.copyfile(REGISTRY_PATH, path)
@@ -163,7 +191,25 @@ class CompatibilityGateTests(unittest.TestCase):
                 result = run_schema_gate(new_frames(), work_dir=work, runtime=self._runtime())
             self.assertEqual(result["frames"]["income"]["quarter"]["shape_mode"], "period_column_rows")
             saved = json.loads((Path(work) / "schema-fingerprint.json").read_text())
-            self.assertEqual(saved["tested_version"], "3.2.7")
+            self.assertEqual(saved["tested_version"], "3.2.8")
+
+    def test_long_shape_writes_fingerprint_for_328(self):
+        with tempfile.TemporaryDirectory() as work:
+            with patch("vnstock_compat.importlib.metadata.version", return_value="3.2.8"):
+                result = run_schema_gate(long_frames(), work_dir=work, runtime=self._runtime_328())
+            self.assertEqual(result["status"], "supported")
+            self.assertEqual(result["frames"]["income"]["quarter"]["shape_mode"], "long_period_id_rows")
+            self.assertEqual(result["tested_distribution_version"], "3.2.8")
+
+    def test_statement_request_is_version_aware_without_fallback(self):
+        self.assertEqual(
+            statement_request_kwargs({"distribution_version": "3.2.7"}, "year"),
+            {"period": "year", "lang": "en"},
+        )
+        self.assertEqual(
+            statement_request_kwargs({"distribution_version": "3.2.8"}, "year"),
+            {"period": "year", "lang": "en", "format": "time_series"},
+        )
 
     def test_missing_required_statement_key_fails_closed(self):
         frames = old_frames()

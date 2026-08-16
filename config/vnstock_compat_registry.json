@@ -1,15 +1,29 @@
 {
-  "registry_version": 1,
+  "registry_version": 2,
   "provider": "vnstock_data",
   "distribution": "vnstock_data",
-  "authoritative_distribution_version": "3.2.7",
+  "authoritative_distribution_version": "3.2.8",
   "supported_version_pairs": [
     {
       "distribution_version": "3.2.7",
       "module_versions": ["3.2.2"]
+    },
+    {
+      "distribution_version": "3.2.8",
+      "module_versions": ["3.2.2"]
     }
   ],
-  "tested_version": "3.2.7",
+  "tested_version": "3.2.8",
+  "statement_formats": {
+    "3.2.7": {
+      "request_format": null,
+      "accepted_payload_shapes": ["period_column_rows", "period_index_rows", "item_by_period_wide"]
+    },
+    "3.2.8": {
+      "request_format": "time_series",
+      "accepted_payload_shapes": ["period_column_rows", "long_period_id_rows", "item_by_period_wide"]
+    }
+  },
   "api_surface": {
     "classes": {
       "Fundamental": {

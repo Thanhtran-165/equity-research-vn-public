@@ -1,3 +1,14 @@
+## Compatibility 3.2.8 (2026-08-16)
+
+- Hỗ trợ đồng thời `vnstock_data` distribution 3.2.7/module 3.2.2 và
+  distribution 3.2.8/module 3.2.2.
+- Với 3.2.8, builder yêu cầu `format=time_series`; adapter cũng nhận long
+  `period/id/value` nhưng chặn trùng `(period, id)` thay vì tự aggregate.
+- Bổ sung ánh xạ exact-first cho VAS IDs của doanh nghiệp thường, ngân hàng,
+  chứng khoán và bảo hiểm; giữ số 0 là dữ liệu thật, NaN/blank không biến thành 0.
+- Tồn kho toàn 0 của định chế tài chính được ghi N/A; mutation số liệu vẫn bị
+  oracle source-pack bắt.
+
 ## verification-layer 0.3.0 — 2026-07-31 (V5 Wave — data provenance & narrative integrity)
 
 ### added (8 new REQs — gap còn lại sau V3/V4)

@@ -23,6 +23,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)
 from statement_adapter import annual_rows, normalize_statement
+from vnstock_compat import fetch_statement_frame
 
 TICKER = sys.argv[1] if len(sys.argv) > 1 else "UNKNOWN"
 REPORT = sys.argv[2] if len(sys.argv) > 2 else None
@@ -3965,28 +3966,34 @@ def verify_period_integrity(req, html):
                 import math as _math
                 contract_years = {str(y) for y in years_int}
                 inventory_column_has_values = False
+                inventory_column_has_nonzero = False
                 if inventory_source_col:
                     for source_row in rows:
                         if str(source_row.get("period", "")).strip() not in contract_years:
                             continue
                         try:
-                            if _math.isfinite(float(source_row.get(inventory_source_col))):
+                            value = float(source_row.get(inventory_source_col))
+                            if _math.isfinite(value):
                                 inventory_column_has_values = True
-                                break
+                                if value != 0:
+                                    inventory_column_has_nonzero = True
                         except (TypeError, ValueError):
                             continue
                 inventory_contract_has_values = False
+                inventory_contract_has_nonzero = False
                 for contract_item in fin.get(arr_key, []) or []:
                     try:
-                        if _math.isfinite(float(contract_item)):
+                        value = float(contract_item)
+                        if _math.isfinite(value):
                             inventory_contract_has_values = True
-                            break
+                            if value != 0:
+                                inventory_contract_has_nonzero = True
                     except (TypeError, ValueError):
                         continue
                 if ("bank" in sector_cfg.lower()
                         or ((financial_schema or statement_type == "financial_institution")
-                            and not inventory_column_has_values
-                            and not inventory_contract_has_values)):
+                            and not inventory_column_has_nonzero
+                            and not inventory_contract_has_nonzero)):
                     per_field[canonical] = {
                         "not_applicable": "financial-statement schema — không có dữ liệu hàng tồn kho khả dụng",
                         "oracle": ("source-pack income column Total Operating Income" if financial_schema
@@ -4275,7 +4282,7 @@ def verify_data_provenance(req, html):
         fapi = Fundamental().equity(TICKER)
         # income statement → Net sales / Attributable to parent company / EPS basic
         annual = annual_rows(normalize_statement(
-            fapi.income_statement(period='year', lang='en'), 'income'
+            fetch_statement_frame(fapi, 'income_statement', 'year', lang='en'), 'income'
         ))
         col_map = {
             "revenue_ty": ("Net sales", "Total Operating Income"),
@@ -4303,7 +4310,7 @@ def verify_data_provenance(req, html):
                 api_spots[fk] = (best_val / (1e9 if fk != "eps_vnd" else 1), f"API vnstock live ({resolved} {best_yr})", 10 if fk != "eps_vnd" else 15, best_yr)
         # balance sheet → Total assets
         bannual = annual_rows(normalize_statement(
-            fapi.balance_sheet(period='year', lang='en'), 'balance'
+            fetch_statement_frame(fapi, 'balance_sheet', 'year', lang='en'), 'balance'
         ))
         ta_col = _ci_find(list(bannual.columns), "Total assets")
         if ta_col is not None:
@@ -5085,6 +5092,14 @@ def verify_no_zero_datasets(req, html):
     except Exception as e:
         return False, {"error": f"DATA parse lỗi: {e}"}
 
+    # Định chế tài chính có thể trả tiêu chí tồn kho toàn 0/trống vì không áp
+    # dụng tồn kho. Oracle builder/verifier xử lý mutation field này riêng; không
+    # coi biểu đồ N/A trung tính là bộ dữ liệu rỗng.
+    vdd = _load_json_rel("verified-dashboard-data.json") or {}
+    na_zero_datasets = set()
+    if str(vdd.get("statement_type", "")).lower() == "financial_institution":
+        na_zero_datasets.add("inventory")
+
     issues = []
     checked = 0
     for key, val in data.items():
@@ -5095,7 +5110,7 @@ def verify_no_zero_datasets(req, html):
         if not nums:
             continue
         checked += 1
-        if all(v == 0 for v in nums):
+        if all(v == 0 for v in nums) and key not in na_zero_datasets:
             issues.append(f"dataset '{key}' toàn 0 — chart vẽ rỗng (data thiếu hoặc key sai)")
             if len(issues) >= 10:
                 break
