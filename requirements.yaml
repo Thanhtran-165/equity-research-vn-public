@@ -279,7 +279,7 @@ requirements:
     method: valuation_recompute_check
     formulas:
     - name: PE
-      formula: price / eps_2025
+      formula: price / eps_latest_completed_year
       report_extract: P/E.*?([\d.]+)x
       tolerance_pct: 2
     - name: PB
@@ -693,10 +693,10 @@ requirements:
   verification:
     method: internal_identity_check
     rules:
-    - PE claim × EPS(2025) ≈ current_price ±5%
-    - PB claim × BVPS(2025) ≈ current_price ±5%
+    - PE claim × EPS(năm tài chính hoàn tất mới nhất) ≈ current_price ±5%
+    - PB claim × BVPS(năm tài chính hoàn tất mới nhất) ≈ current_price ±5%
     - vốn hóa claim ≈ price × issue_share ±5%
-    - EPS(2025) ≈ npatmi(2025)×1e9 / shares ±15% (EPS có thể tính theo diluted/CP bình quân; lệch >15% → data tự mâu thuẫn)
+    - EPS(năm tài chính hoàn tất mới nhất) ≈ npatmi(cùng năm)×1e9 / shares ±15% (EPS có thể tính theo diluted/CP bình quân; lệch >15% → data tự mâu thuẫn)
     - contract price vs financials price ±5%
 - id: REQ-061
   text: 'Derived metrics recompute: mọi claim ROE/ROA/net margin/tăng trưởng YoY/vốn hóa phải recompute được từ financials.json + balance_sheet.json (±5% tương đối hoặc ±1pp tuyệt đối). Chống "ROE 24%" bịa khi data cho ROE 8%. GAP-1 FIX (V4 Flash): kể cả dạng "ROE (2025) X%" — năm trong ngoặc giữa keyword và số (pattern cũ kẹt ở "(2025)").'

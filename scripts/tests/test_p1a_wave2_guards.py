@@ -82,6 +82,18 @@ def main():
     report = staging(v, {"data/financials.json": fin}, html)
     expect("REQ-060 display rounding", v.verify_internal_identity({"verification": {"tolerance_pct": 5}}, report.read_text()))
 
+    # REQ-060: year binding follows the latest common artifact year, never 2025 by fiat.
+    fin = {"eps_vnd": {"2024": 900.0, "2026": 2000.0},
+           "equity_ty": {"2024": 9.0, "2026": 20.0},
+           "npatmi_ty": {"2024": 0.9, "2026": 2.0},
+           "overview": {"current_price": 4000.0, "issue_share": 10_000_000.0}}
+    html = ('<section id="sec-valuation">P/E 2.00×; P/B 2.00×</section>'
+            '<section id="sec-hero">vốn hóa 40 tỷ</section>')
+    report = staging(v, {"data/financials.json": fin}, html)
+    passed, evidence = v.verify_internal_identity({"verification": {"tolerance_pct": 5}}, report.read_text())
+    assert passed, evidence
+    assert evidence["financial_year"] == "2026", evidence
+
     # REQ-068: required keys remain mandatory, but semantic N/A is valid.
     schema_dir = Path(tempfile.mkdtemp(prefix="p1a_schema_"))
     (schema_dir / "task-state.schema.json").write_text((ROOT / "task-state.schema.json").read_text())
@@ -113,6 +125,19 @@ def main():
     report = staging(v, {".task-state/task-state.json": ts}, "<section id='sec-valuation'>Định giá DCF theo P/B.</section>")
     v.TICKER = "DCF"
     expect("REQ-063 ticker acronym", v.verify_valuation_methods({"verification": {"methods": ["dcf_per_share"]}}, report.read_text()))
+
+    # REQ-063: Graham uses the latest common artifact year rather than 2025.
+    v.TICKER = "TST"
+    graham = (22.5 * 2000.0 * 2000.0) ** 0.5
+    ts = {"phases": {"phase3_valuation": {"result": {"graham_number": graham}}}}
+    fin = {"eps_vnd": {"2024": 900.0, "2026": 2000.0},
+           "equity_ty": {"2024": 9.0, "2026": 20.0},
+           "overview": {"issue_share": 10_000_000.0}}
+    report = staging(v, {".task-state/task-state.json": ts, "data/financials.json": fin},
+                     "<section id='sec-valuation'>Số Graham được đối chiếu.</section>")
+    passed, evidence = v.verify_valuation_methods({"verification": {"methods": ["graham_number"]}}, report.read_text())
+    assert passed, evidence
+    assert evidence["graham_year"] == "2026", evidence
 
     print("OK P1-A wave2: year binding, N/A semantics, signed metrics, rounding and mutations")
 

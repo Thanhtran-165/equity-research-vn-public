@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from statement_adapter import (  # noqa: E402
     StatementSchemaError,
     annual_rows,
+    completed_annual_rows,
     combine_statements,
     normalize_statement,
 )
@@ -77,6 +78,67 @@ class StatementAdapterTests(unittest.TestCase):
         })
         got = normalize_statement(raw, "balance")
         self.assertEqual(got.loc["2025", "Owner's Equity"], 40.0)
+
+    def test_securities_schema_uses_net_revenue_not_deduction(self):
+        income = pd.DataFrame({
+            "period": [2025],
+            "deduction_from_revenue": [None],
+            "net_revenue": [987.0],
+            "xi_loi_nhuan_ke_toan_sau_thue_tndn": [123.0],
+            "11_1_loi_nhuan_sau_thue_phan_bo_cho_chu_so_huu": [120.0],
+            "13_1_lai_co_ban_tren_co_phieu_dong_1_co_phieu_vn": [1500.0],
+        })
+        got = normalize_statement(income, "income")
+        self.assertEqual(got.loc["2025", "Net sales"], 987.0)
+        self.assertEqual(got.loc["2025", "Net profit/(loss) after tax"], 123.0)
+        self.assertEqual(got.loc["2025", "Attributable to parent company"], 120.0)
+        self.assertEqual(got.loc["2025", "EPS basic (VND)"], 1500.0)
+
+        cash_flow = pd.DataFrame({
+            "period": [2025],
+            "luu_chuyen_tien_thuan_tu_hoat_dong_kinh_doanh_chung_khoan": [55.0],
+        })
+        got_cf = normalize_statement(cash_flow, "cash_flow")
+        self.assertEqual(
+            got_cf.loc["2025", "Net cash inflows/(outflows) from operating activities"],
+            55.0,
+        )
+
+    def test_insurance_schema_gets_canonical_aliases(self):
+        income = pd.DataFrame({
+            "period": [2025],
+            "5_doanh_thu_thuan_hdkd_bh_10_03_04": [456.0],
+            "29_loi_nhuan_sau_thue_thu_nhap_doanh_nghiep": [44.0],
+            "31_loi_nhuan_sau_thue_cua_co_dong_cua_cong_ty_me": [40.0],
+            "32_lai_co_ban_tren_co_phieu_vn": [800.0],
+        })
+        got = normalize_statement(income, "income")
+        self.assertEqual(got.loc["2025", "Net sales"], 456.0)
+        self.assertEqual(got.loc["2025", "Net profit/(loss) after tax"], 44.0)
+        self.assertEqual(got.loc["2025", "Attributable to parent company"], 40.0)
+        self.assertEqual(got.loc["2025", "EPS basic (VND)"], 800.0)
+
+        balance = pd.DataFrame({
+            "period": [2025],
+            "a_no_phai_tra_300_210_330": [600.0],
+            "b_von_chu_so_huu_400_410_430": [400.0],
+        })
+        got_bs = normalize_statement(balance, "balance")
+        self.assertEqual(got_bs.loc["2025", "Total Liabilities"], 600.0)
+        self.assertEqual(got_bs.loc["2025", "Owner's Equity"], 400.0)
+
+    def test_current_year_ltm_is_not_a_completed_annual_period(self):
+        raw = pd.DataFrame({
+            "period": [2024, 2025, 2026],
+            "report_period": ["year", "year", "year"],
+            "Net sales": [100.0, 110.0, 999.0],
+        })
+        got = normalize_statement(raw, "income")
+        self.assertEqual(list(annual_rows(got).index), ["2024", "2025", "2026"])
+        self.assertEqual(
+            list(completed_annual_rows(got, current_year=2026).index),
+            ["2024", "2025"],
+        )
 
     def test_missing_period_fails_closed(self):
         with self.assertRaises(StatementSchemaError):

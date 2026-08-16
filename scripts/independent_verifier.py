@@ -3940,10 +3940,14 @@ def verify_period_integrity(req, html):
                     str(h).strip().lower() == "total operating income"
                     for h in income_rows[0].keys()
                 ))
-                if "bank" in sector_cfg.lower() or financial_schema:
+                statement_type = str(vdd.get("statement_type") or "").lower()
+                if ("bank" in sector_cfg.lower()
+                        or financial_schema
+                        or statement_type == "financial_institution"):
                     per_field[canonical] = {
                         "not_applicable": "financial-statement schema — không có hàng tồn kho",
-                        "oracle": "source-pack income column Total Operating Income" if financial_schema else "sector=banking",
+                        "oracle": ("source-pack income column Total Operating Income" if financial_schema
+                                   else f"statement_type={statement_type or 'banking'}"),
                     }
                     continue
             # P0 (Sol checkpoint 2): chọn cột theo ALIAS ƯU TIÊN CỐ ĐỊNH (thứ tự danh
@@ -4370,6 +4374,20 @@ def verify_data_provenance(req, html):
                     "data_source": ds}
 
 
+def _latest_common_financial_year(fin, *series_keys):
+    """Trả năm mới nhất cùng có mặt trong các chuỗi tài chính yêu cầu."""
+    year_sets = []
+    for key in series_keys:
+        series = fin.get(key) or {}
+        years = {str(y) for y in series if str(y).isdigit()}
+        if years:
+            year_sets.append(years)
+    if not year_sets:
+        return None
+    common = set.intersection(*year_sets)
+    return max(common, key=int) if common else None
+
+
 def verify_internal_identity(req, html):
     """REQ-060: cross-footing — PE×EPS≈price; PB×BVPS≈price; vốn hóa≈price×shares;
     EPS≈NPAT/shares; contract price≈financials price. Chống bịa số lẻ không khớp."""
@@ -4381,39 +4399,42 @@ def verify_internal_identity(req, html):
     issues = []
     ov = fin.get("overview") or {}
     price, shares = ov.get("current_price"), ov.get("issue_share")
-    eps25 = (fin.get("eps_vnd") or {}).get("2025")
-    eq25 = (fin.get("equity_ty") or {}).get("2025")
-    np25 = (fin.get("npatmi_ty") or {}).get("2025")
+    identity_year = _latest_common_financial_year(
+        fin, "eps_vnd", "equity_ty", "npatmi_ty"
+    )
+    eps_latest = (fin.get("eps_vnd") or {}).get(identity_year) if identity_year else None
+    eq_latest = (fin.get("equity_ty") or {}).get(identity_year) if identity_year else None
+    np_latest = (fin.get("npatmi_ty") or {}).get(identity_year) if identity_year else None
 
     # 1) EPS ≈ NPAT / shares — P0-6 (Sol 2026-08-08): theo IAS 33, EPS reported dùng
     #    cổ phiếu BÌNH QUÂN (weighted-average) và earnings attributable — không được
     #    ép khớp bằng ending shares. Lệch chỉ là cảnh báo (note), KHÔNG fail; EPS bịa
     #    vẫn bị REQ-033 (cross-section narrative vs data) bắt.
     eps_note = ""
-    if eps25 and np25 is not None and shares:
-        eps_calc = float(np25) * 1e9 / float(shares)
-        if abs(eps_calc - float(eps25)) / max(abs(float(eps25)), 0.001) * 100 > eps_tol:
-            eps_note = f"EPS {eps25} ≠ NPAT/shares {eps_calc:,.0f} (lệch {abs(eps_calc-float(eps25))/max(abs(float(eps25)),0.001)*100:.0f}% > {eps_tol}% — EPS reported theo cổ phiếu bình quân, chấp nhận, không ép)"
+    if eps_latest and np_latest is not None and shares:
+        eps_calc = float(np_latest) * 1e9 / float(shares)
+        if abs(eps_calc - float(eps_latest)) / max(abs(float(eps_latest)), 0.001) * 100 > eps_tol:
+            eps_note = f"EPS {eps_latest} ≠ NPAT/shares {eps_calc:,.0f} (lệch {abs(eps_calc-float(eps_latest))/max(abs(float(eps_latest)),0.001)*100:.0f}% > {eps_tol}% — EPS reported theo cổ phiếu bình quân, chấp nhận, không ép)"
 
     # 2) PE claim × EPS ≈ price
     val_text = " ".join(s for s in [extract_section_text(html, x) for x in
                                     ["sec-valuation", "sec-hero", "sec-exec"]] if s)
     if not val_text:
         val_text = _narrative_text(html)
-    if price and eps25 and eps25 > 0:
+    if price and eps_latest and eps_latest > 0:
         # FIX VN100 (HLT 2026-08-02): EPS ≤ 0 (công ty lỗ) → P/E âm — cross-footing
         # vô nghĩa (P/E âm × EPS âm = giá dương, verifier tính sai dấu → false positive)
         pe = _extract_primary_multiple(val_text, "P/?E", None, tol)
         if pe:
-            pe_comp = float(price) / float(eps25)
+            pe_comp = float(price) / float(eps_latest)
             pe_abs_tol = max(abs(pe_comp) * tol / 100, 0.005)
             if abs(float(pe) - pe_comp) > pe_abs_tol:
-                implied = float(pe) * float(eps25)
-                issues.append(f"P/E {pe}× × EPS {eps25} = {implied:,.0f} ≠ giá {price} (tol multiple={pe_abs_tol:.3f})")
+                implied = float(pe) * float(eps_latest)
+                issues.append(f"P/E {pe}× × EPS {eps_latest} ({identity_year}) = {implied:,.0f} ≠ giá {price} (tol multiple={pe_abs_tol:.3f})")
 
     # 3) PB claim × BVPS ≈ price
-    if price and eq25 and shares and eq25 > 0:
-        bvps = float(eq25) * 1e9 / float(shares)
+    if price and eq_latest and shares and eq_latest > 0:
+        bvps = float(eq_latest) * 1e9 / float(shares)
         pb = _extract_primary_multiple(val_text, "P/?B", None, tol)
         if pb:
             pb_comp = float(price) / bvps
@@ -4443,8 +4464,9 @@ def verify_internal_identity(req, html):
             issues.append(f"contract price {contract['price']} ≠ financials price {price} (lệch >{tol}%)")
 
     passed = len(issues) == 0
-    return passed, {"issues": issues[:8], "price": price, "eps_2025": eps25,
-                    "note": eps_note or ("no price/eps data to cross-foot" if not price or not eps25 else "")}
+    return passed, {"issues": issues[:8], "price": price,
+                    "financial_year": identity_year, "eps_latest": eps_latest,
+                    "note": eps_note or ("no price/eps data to cross-foot" if not price or not eps_latest else "")}
 
 
 def verify_derived_metrics_recompute(req, html):
@@ -4636,18 +4658,20 @@ def verify_valuation_methods(req, html):
     # Graham recompute từ data
     fin = _load_json_rel("data/financials.json")
     g = src.get("graham_number")
+    graham_year = _latest_common_financial_year(fin, "eps_vnd", "equity_ty") if fin else None
     if g and fin:
-        eps = (fin.get("eps_vnd") or {}).get("2025")
-        eq = (fin.get("equity_ty") or {}).get("2025")
+        eps = (fin.get("eps_vnd") or {}).get(graham_year) if graham_year else None
+        eq = (fin.get("equity_ty") or {}).get(graham_year) if graham_year else None
         ov = fin.get("overview") or {}
         if eps and eq and ov.get("issue_share"):
             bvps = float(eq) * 1e9 / float(ov["issue_share"])
             g_comp = (22.5 * float(eps) * bvps) ** 0.5
             if abs(g_comp - float(g)) / max(abs(g_comp), 0.001) * 100 > 5:
-                issues.append(f"Graham recompute {g_comp:,.0f} ≠ report/nguồn {g:,.0f} (>5%)")
+                issues.append(f"Graham recompute năm {graham_year}: {g_comp:,.0f} ≠ report/nguồn {g:,.0f} (>5%)")
 
     passed = len(issues) == 0
-    return passed, {"issues": issues[:8], "source": src_name, "methods": methods}
+    return passed, {"issues": issues[:8], "source": src_name, "methods": methods,
+                    "graham_year": graham_year}
 
 
 def verify_trend_consistency(req, html):

@@ -11,7 +11,7 @@ import sys, json, os, re, statistics, traceback, subprocess, math, tempfile
 from datetime import datetime, timedelta
 
 from runtime_environment import SponsorDependencyError, raise_sponsor_dependency
-from statement_adapter import annual_rows, combine_statements
+from statement_adapter import combine_statements, completed_annual_rows
 
 TICKER = sys.argv[1]
 SECTOR = sys.argv[2] if len(sys.argv) > 2 else 'general'
@@ -184,7 +184,12 @@ def fetch():
     # Financial statements do not always expose the same annual rows.  The report
     # is anchored on years that exist in both income and balance statements;
     # cash-flow values are optional and are aligned by year (never by list index).
-    inc_a=annual_rows(inc).tail(5); bal_a=annual_rows(bal).tail(5); cf_a=annual_rows(cf).tail(5)
+    # Không nhận dòng LTM/quý hiện tại bị provider gắn nhãn ``year`` làm năm
+    # hoàn chỉnh (CTD từng neo 2026 vào tháng 8/2026). Source-pack vẫn giữ dòng
+    # gốc để audit; báo cáo chỉ dùng năm đã kết thúc trước năm đang chạy.
+    inc_a=completed_annual_rows(inc).tail(5)
+    bal_a=completed_annual_rows(bal).tail(5)
+    cf_a=completed_annual_rows(cf).tail(5)
     common_years=sorted(set(inc_a.index) & set(bal_a.index))[-5:]
     if not common_years:
         raise ValueError("no common annual income/balance years")
@@ -195,11 +200,31 @@ def fetch():
     # securities/consumer-finance issuers) also expose Total Operating Income,
     # not industrial "Net sales". Sector labels are too coarse to be an oracle.
     toi_col = next((c for c in inc5.columns if str(c).strip().lower() == 'total operating income'), None)
-    financial_statement = bool(toi_col)
-    if IS_BANK or financial_statement:
+    # Ngân hàng, chứng khoán và bảo hiểm đều là định chế tài chính, nhưng chỉ
+    # ngân hàng/lender dùng Total Operating Income. SSI/BVH vẫn có canonical
+    # Net sales do adapter ánh xạ từ schema riêng; không được ép về TOI.
+    specialized_financial_markers = {
+        'net_revenue',
+        '5_doanh_thu_thuan_hdkd_bh_10_03_04',
+        'luu_chuyen_tien_thuan_tu_hoat_dong_kinh_doanh_chung_khoan',
+        'a_no_phai_tra_300_210_330',
+        'a_no_phai_tra_300_310_340',
+    }
+    specialized_financial = bool(
+        toi_col
+        or specialized_financial_markers.intersection(map(str, inc5.columns))
+        or specialized_financial_markers.intersection(map(str, bal5.columns))
+        or specialized_financial_markers.intersection(map(str, cf5.columns))
+    )
+    if IS_BANK or toi_col:
         rev_col=toi_col or 'Total Operating Income'; npat_col='Net profit/(loss) after tax'; npatp_col='Attributable to parent company'
     else:
-        rev_col=next((c for c in inc5.columns if re.search(r'Net sales|Net revenue|Revenue|Doanh thu thuần',c,re.I)),None)
+        # Adapter đã xác định canonical. Exact-first ngăn SSI bắt nhầm raw field
+        # ``deduction_from_revenue`` chỉ vì tên chứa chữ revenue.
+        rev_col='Net sales' if 'Net sales' in inc5.columns else next(
+            (c for c in inc5.columns if re.fullmatch(r'Net revenue|Revenue|Doanh thu thuần', str(c), re.I)),
+            None,
+        )
         # Ưu tiên Attributable (CĐ mẹ) — MSN/VIC có minority lớn: EPS tính trên attributable
         # nên npatmi_ty phải là attributable, nếu dùng total → lệch >15% (REQ-060)
         npat_col=next((c for c in inc5.columns if re.search(r'Attributable to parent|Net profit attributable to shareholders',c,re.I)),None) \
@@ -282,7 +307,7 @@ def fetch():
     ev_ebitda = None  # P0-6 (Sol 2026-08-08): EV/EBITDA gỡ khỏi output — net_debt trước
     # đây tính bằng tổng liabilities (sai khái niệm: phải nợ vay chịu lãi − tiền);
     # mapping nợ/cash đúng sẽ được xác minh rồi mới bật lại.
-    return dict(years=years,toi=toi,npat=npat,npatp=npatp,eps=eps,equity=equity,assets=assets,cfo=cfo,capex=capex,gross=gross,liab=liab,inventory=inventory,last=last,shares=shares,periods=min(len(inc), len(bal), len(cf)),ev_ebitda=ev_ebitda,as_of_date=as_of_date,statement_type=('financial_institution' if financial_statement else 'corporate'))
+    return dict(years=years,toi=toi,npat=npat,npatp=npatp,eps=eps,equity=equity,assets=assets,cfo=cfo,capex=capex,gross=gross,liab=liab,inventory=inventory,last=last,shares=shares,periods=min(len(inc), len(bal), len(cf)),ev_ebitda=ev_ebitda,as_of_date=as_of_date,statement_type=('financial_institution' if specialized_financial else 'corporate'))
 
 # ============ TECH SCORE (REQ-005/037) ============
 def tech_score(D_raw):

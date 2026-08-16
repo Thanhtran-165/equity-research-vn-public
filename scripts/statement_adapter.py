@@ -10,6 +10,7 @@ verifier đã kiểm định sử dụng.
 from __future__ import annotations
 
 import re
+from datetime import date
 from typing import Iterable
 
 import pandas as pd
@@ -98,6 +99,20 @@ def annual_rows(frame: pd.DataFrame) -> pd.DataFrame:
     return frame[frame["report_period"].eq("year")].sort_index()
 
 
+def completed_annual_rows(frame: pd.DataFrame, current_year: int | None = None) -> pd.DataFrame:
+    """Chỉ lấy năm tài chính đã kết thúc trước năm đang chạy.
+
+    Một số payload VCI gắn dòng LTM/quý hiện tại thành một dòng ``year`` (ví dụ
+    CTD có nhãn 2026 vào tháng 8/2026). Dòng đó không phải BCTC năm hoàn chỉnh và
+    không được phép trở thành năm định giá. Giữ toàn bộ dòng trong source-pack;
+    chỉ loại khỏi chuỗi annual dùng để dựng báo cáo.
+    """
+    rows = annual_rows(frame)
+    cutoff = int(current_year or date.today().year) - 1
+    mask = [int(str(period)[:4]) <= cutoff for period in rows.index]
+    return rows.loc[mask]
+
+
 def _alias(frame: pd.DataFrame, target: str, names: Iterable[str]) -> None:
     # Payload 3.2.7 có thể đồng thời chứa schema cũ/mới: một cột tồn tại nhưng
     # toàn NaN ở các năm mới, cột kế tiếp mới có số. Coalesce theo thứ tự ưu tiên,
@@ -117,19 +132,31 @@ def _add_canonical_fields(frame: pd.DataFrame, statement: str) -> pd.DataFrame:
     if statement == "income":
         _alias(out, "Net sales", (
             "3_doanh_thu_thuan_ve_ban_hang_va_cung_cap_dich_vu",
+            # Chứng khoán: dùng doanh thu thuần, tuyệt đối không bắt substring
+            # ``deduction_from_revenue`` (khoản giảm trừ, thường là NaN).
+            "net_revenue",
+            # Bảo hiểm TT51.
+            "5_doanh_thu_thuan_hdkd_bh_10_03_04",
+            "5_1_doanh_thuan_bh_va_ccdv",
             "Net revenue", "Revenue", "Doanh thu thuần",
         ))
         _alias(out, "Attributable to parent company", (
+            "11_1_loi_nhuan_sau_thue_phan_bo_cho_chu_so_huu",
+            "31_loi_nhuan_sau_thue_cua_co_dong_cua_cong_ty_me",
             "loi_nhuan_sau_thue_cua_co_dong_cua_cong_ty_me",
             "xv_loi_nhuan_sau_thue_cua_co_dong_cua_ngan_hang_me_xiii_xiv",
             "Net profit attributable to shareholders",
         ))
         _alias(out, "Net profit/(loss) after tax", (
+            "xi_loi_nhuan_ke_toan_sau_thue_tndn",
+            "29_loi_nhuan_sau_thue_thu_nhap_doanh_nghiep",
             "xiii_loi_nhuan_sau_thue_xi_xii",
             "18_loi_nhuan_sau_thue_thu_nhap_doanh_nghiep",
             "Attributable to parent company", "Profit after tax",
         ))
         _alias(out, "EPS basic (VND)", (
+            "13_1_lai_co_ban_tren_co_phieu_dong_1_co_phieu_vn",
+            "32_lai_co_ban_tren_co_phieu_vn",
             "19_lai_co_ban_tren_co_phieu_vn", "lai_co_ban_tren_co_phieu_bctc_vnd",
             "EPS basic", "Earnings per share",
         ))
@@ -151,14 +178,22 @@ def _add_canonical_fields(frame: pd.DataFrame, statement: str) -> pd.DataFrame:
                 out["Total Operating Income"] = pd.concat(present, axis=1).sum(axis=1, min_count=1)
     elif statement == "balance":
         _alias(out, "Total Assets", ("total_assets", "a_tai_san"))
-        _alias(out, "Total Liabilities", ("liabilities", "c_no_phai_tra", "a_no_phai_tra"))
-        _alias(out, "Owner's Equity", ("d_von_chu_so_huu", "b_von_chu_so_huu", "viii_von_va_cac_quy"))
+        _alias(out, "Total Liabilities", (
+            "a_no_phai_tra_300_210_330", "a_no_phai_tra_300_310_340",
+            "liabilities", "c_no_phai_tra", "a_no_phai_tra",
+        ))
+        _alias(out, "Owner's Equity", (
+            "b_von_chu_so_huu_400_410_430", "b_von_chu_so_huu_400_410_420",
+            "d_von_chu_so_huu", "b_von_chu_so_huu", "viii_von_va_cac_quy",
+        ))
         if "Owner's Equity" not in out.columns and {"Total Assets", "Total Liabilities"}.issubset(out.columns):
             out["Owner's Equity"] = out["Total Assets"] - out["Total Liabilities"]
         _alias(out, "Inventory", ("iv_hang_ton_kho", "1_hang_ton_kho", "Inventories", "Hàng tồn kho"))
         _alias(out, "Paid-in capital", ("1_von_gop_cua_chu_so_huu", "a_von_dieu_le", "Charter capital", "Vốn điều lệ"))
     elif statement == "cash_flow":
         _alias(out, "Net cash inflows/(outflows) from operating activities", (
+            "luu_chuyen_tien_thuan_tu_hoat_dong_kinh_doanh_chung_khoan",
+            "luu_chuyen_tien_thuan_tu_hdkd",
             "luu_chuyen_tien_thuan_tu_hoat_dong_kinh_doanh",
             "net_cash_flows_from_operating_activities", "Net cash from operating activities",
         ))
