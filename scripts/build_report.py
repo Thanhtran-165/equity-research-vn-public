@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 
 from runtime_environment import SponsorDependencyError, raise_sponsor_dependency
 from statement_adapter import combine_statements, completed_annual_rows
+from task_state_runtime import sponsor_period_count
 from vnstock_compat import (
     CompatibilityGateError,
     probe_api_surface,
@@ -974,7 +975,7 @@ def render(D,cagr,npat_growth,roe_hist,cp_back,cp_consistent,graham,pe5med,news)
     return out
 
 # ============ TASK-STATE (REQ-003/068) ============
-def task_state(D,cagr,roe_hist,cp_back,cp_consistent,news):
+def task_state(D,cagr,roe_hist,cp_back,cp_consistent,news,periods):
     fin=json.load(open(f'{WORK}/data/financials.json'))
     years=[int(y) for y in fin['revenue_ty'].keys()]
     eps_latest=fin['eps_vnd'][str(years[-1])]
@@ -984,8 +985,8 @@ def task_state(D,cagr,roe_hist,cp_back,cp_consistent,news):
     bear_target=round(max(raw_pe*0.7,3)*eps_latest*0.9,0) if isinstance(raw_pe,(int,float)) and raw_pe>0 and eps_latest>0 else None
     ts={"ticker":TICKER,"investment_amount":None,
         "phases":{
-        "phase0_sponsor":{"status":"completed","result":{"investment_amount":None,"fiscal_year_type":"calendar","tier":('golden' if D_raw['periods'] >= 42 else 'silver'),"periods":D_raw['periods'],"sponsor_ok":(D_raw['periods'] >= 42),"api_source":"vnstock_data_sponsor_gold","version":"vnstock==3.5.1"}},
-        "phase1_data":{"status":"completed","result":{"data_source":"vnstock_data_sponsor_gold (VCI)","split_audit":{"cp_consistent":cp_consistent,"method":"back-calc CP=LNST/EPS so issue_share","periods_checked":len(years),"cp_back_calc_m":cp_back,"cp_variation_cause":"dilution/bonus issue (EPS restated per period — no historical restatement needed, data from sponsor per-period BCTC)"},"fiscal_year_type":"calendar","fiscal_year_end":"12/31","periods":D_raw['periods'],"years":years}},
+        "phase0_sponsor":{"status":"completed","result":{"investment_amount":None,"fiscal_year_type":"calendar","tier":('golden' if periods >= 42 else 'silver'),"periods":periods,"sponsor_ok":(periods >= 42),"api_source":"vnstock_data_sponsor_gold","version":"vnstock==3.5.1"}},
+        "phase1_data":{"status":"completed","result":{"data_source":"vnstock_data_sponsor_gold (VCI)","split_audit":{"cp_consistent":cp_consistent,"method":"back-calc CP=LNST/EPS so issue_share","periods_checked":len(years),"cp_back_calc_m":cp_back,"cp_variation_cause":"dilution/bonus issue (EPS restated per period — no historical restatement needed, data from sponsor per-period BCTC)"},"fiscal_year_type":"calendar","fiscal_year_end":"12/31","periods":periods,"years":years}},
         "phase2_fundamental":{"status":"completed","result":{"eps":fin['eps_vnd'][str(years[-1])],"roe":round(roe_hist[-1],2),"cagr":round(cagr,2) if cagr is not None else None,"npat_ty":fin['npatmi_ty'][str(years[-1])],"revenue_ty":fin['revenue_ty'][str(years[-1])],"equity_ty":round(fin['equity_ty'][str(years[-1])],2),"sector":SECTOR,"dupont_done":True}},
         "phase3_valuation":{"status":"completed","result":{"targets":{"bull":bull_target,"base":D['price'],"bear":bear_target},"pe":D['pe'],"pb":D['pb'],"pe5med":D.get('pe5med'),"graham_number":round(graham,0) if graham is not None else None,"ev_ebitda":D.get('ev_ebitda'),"ps":None,"pcf":None,"dcf_per_share":None,"dcf_reason":"N/A — FCF data insufficient from sponsor API"}},
         "phase4a_tech_active":{"status":"completed","result":{"tech_score":D['tech_score'],"verdict":D['verdict'],"ma20":D['techMA20'],"rsi":D['rsi14'],"max_drawdown_52w":D['max_drawdown_52w']}},
@@ -1033,7 +1034,8 @@ try:
         real_peers = fetch_peers()
         D,cagr,npat_growth,roe_hist,cp_back,cp_consistent,graham,pe5med=build_all(D_raw,tech,news,real_peers)
     print(f'  DATA: pe={D["pe"]}, pb={D["pb"]}, mcap={D["marketCap"]} tỷ, capex_arr={len(D.get("capex",[]))}')
-    task_state(D,cagr,roe_hist,cp_back,cp_consistent,news)
+    periods = sponsor_period_count(WORK)
+    task_state(D,cagr,roe_hist,cp_back,cp_consistent,news,periods)
     out=render(D,cagr,npat_growth,roe_hist,cp_back,cp_consistent,graham,pe5med,news)
     verifier_path = os.path.join(SKILL_DIR, 'scripts', 'independent_verifier.py')
     r=subprocess.run([sys.executable, verifier_path, TICKER, out],capture_output=True,text=True)
