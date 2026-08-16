@@ -12,6 +12,12 @@ from datetime import datetime, timedelta
 
 from runtime_environment import SponsorDependencyError, raise_sponsor_dependency
 from statement_adapter import combine_statements, completed_annual_rows
+from vnstock_compat import (
+    CompatibilityGateError,
+    probe_api_surface,
+    run_schema_gate,
+    validate_reused_schema_fingerprint,
+)
 
 TICKER = sys.argv[1]
 SECTOR = sys.argv[2] if len(sys.argv) > 2 else 'general'
@@ -158,6 +164,7 @@ def CANVAS(cid, h=280, label=None):
 def fetch():
     import pandas as pd, numpy as np
     try:
+        import vnstock_data
         from vnstock_data import Fundamental, Quote
     except (ImportError, ModuleNotFoundError) as exc:
         raise_sponsor_dependency(exc)
@@ -166,15 +173,29 @@ def fetch():
     # sau đó chuẩn hóa về contract nội bộ đã kiểm định. Không pin ngược 3.0.0 và
     # không suy diễn vị trí index của payload nhà cung cấp.
     try:
-        equity_api = Fundamental().equity(TICKER)
+        fundamental = Fundamental()
+        # Probe instance trước khi gọi proxy equity(TICKER), không network/API.
+        runtime = probe_api_surface(vnstock_data, fundamental=fundamental)
+        equity_api = fundamental.equity(TICKER)
+        # Kiểm tra statement methods trên object thật sau lời gọi bắt buộc;
+        # không phát sinh endpoint call mới.
+        runtime = probe_api_surface(vnstock_data, fundamental=fundamental, equity_api=equity_api)
         def _statement(name, period):
             return getattr(equity_api, name)(period=period, lang='en')
-        inc = combine_statements(_statement('income_statement', 'quarter'),
-                                 _statement('income_statement', 'year'), 'income')
-        bal = combine_statements(_statement('balance_sheet', 'quarter'),
-                                 _statement('balance_sheet', 'year'), 'balance')
-        cf = combine_statements(_statement('cash_flow', 'quarter'),
-                                _statement('cash_flow', 'year'), 'cash_flow')
+        raw_frames = {
+            'income': (_statement('income_statement', 'quarter'),
+                       _statement('income_statement', 'year')),
+            'balance': (_statement('balance_sheet', 'quarter'),
+                        _statement('balance_sheet', 'year')),
+            'cash_flow': (_statement('cash_flow', 'quarter'),
+                          _statement('cash_flow', 'year')),
+        }
+        # Gate sau fetch DataFrame và trước mọi derived/render step. Nó ghi
+        # fingerprint/provenance vào WORK; không phát sinh API call mới.
+        run_schema_gate(raw_frames, work_dir=WORK, runtime=runtime)
+        inc = combine_statements(*raw_frames['income'], 'income')
+        bal = combine_statements(*raw_frames['balance'], 'balance')
+        cf = combine_statements(*raw_frames['cash_flow'], 'cash_flow')
     except (ImportError, ModuleNotFoundError) as exc:
         raise_sponsor_dependency(exc)
 
@@ -981,6 +1002,9 @@ try:
     reuse_file = f'{WORK}/verified-dashboard-data.json'
     D_raw = None; tech = None
     if REUSE and os.path.exists(reuse_file) and os.path.exists(f'{WORK}/data/financials.json'):
+        # Không fetch/probe endpoint lại trong reuse; chỉ dùng payload đã có
+        # fingerprint được gate ở lần fetch trước.
+        validate_reused_schema_fingerprint(WORK)
         # --reuse: KHÔNG gọi API tài chính — đọc data đã fetch lần trước, chỉ đổi
         # SECTOR → render + verify. Dùng để gắn ngành thật cho batch đã chạy
         # (VNALL 1.000 mã) không tốn API. Mọi chỉ số lấy THẲNG từ D (khớp bản gốc
@@ -1043,6 +1067,9 @@ try:
         sys.exit(1)
 except SponsorDependencyError as e:
     print(f'ERROR {TICKER}: {e}', file=sys.stderr)
+    sys.exit(2)
+except CompatibilityGateError as e:
+    print(f'COMPATIBILITY GATE: FAIL — {e}', file=sys.stderr)
     sys.exit(2)
 except Exception as e:
     traceback.print_exc()

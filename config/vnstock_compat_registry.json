@@ -1,0 +1,76 @@
+{
+  "registry_version": 1,
+  "provider": "vnstock_data",
+  "distribution": "vnstock_data",
+  "authoritative_distribution_version": "3.2.7",
+  "supported_version_pairs": [
+    {
+      "distribution_version": "3.2.7",
+      "module_versions": ["3.2.2"]
+    }
+  ],
+  "tested_version": "3.2.7",
+  "api_surface": {
+    "classes": {
+      "Fundamental": {
+        "constructor": "callable",
+        "methods": {
+          "equity": {
+            "callable": true,
+            "required_parameters": ["symbol"]
+          }
+        },
+        "equity_methods": {
+          "income_statement": {
+            "callable": true,
+            "required_parameters": ["period", "lang"]
+          },
+          "balance_sheet": {
+            "callable": true,
+            "required_parameters": ["period", "lang"]
+          },
+          "cash_flow": {
+            "callable": true,
+            "required_parameters": ["period", "lang"]
+          }
+        }
+      },
+      "Quote": {
+        "constructor": "callable",
+        "methods": {
+          "history": {
+            "callable": true,
+            "required_parameters": ["start", "end"]
+          }
+        }
+      }
+    }
+  },
+  "data_contract": {
+    "period": {
+      "accepted_representations": ["year", "quarter"],
+      "year_pattern": "^20[0-9]{2}$",
+      "quarter_pattern": "^20[0-9]{2}-Q[1-4]$"
+    },
+    "units": {
+      "status": "not_verified",
+      "assumptions": {
+        "financial_statement_values": "VND_raw",
+        "eps": "VND_per_share",
+        "price": "VND_after_builder_price_normalization",
+        "builder_divisor": 1000000000
+      },
+      "verification_note": "Units are builder assumptions only; they are not verified by this gate."
+    },
+    "required_canonical_fields": {
+      "income": [["Net sales", "Total Operating Income"], ["Net profit/(loss) after tax"]],
+      "balance": [["Total Assets"], ["Owner's Equity"]],
+      "cash_flow": [["Net cash inflows/(outflows) from operating activities"]]
+    },
+    "optional_canonical_fields": {
+      "income": ["Attributable to parent company", "EPS basic (VND)", "Gross Profit"],
+      "balance": ["Inventory", "Paid-in capital", "Total Liabilities"],
+      "cash_flow": ["Purchases of fixed assets and other long term assets"]
+    }
+  }
+}

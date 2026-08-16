@@ -35,6 +35,25 @@ python3 -c "from vnstock_data import Fundamental; print('Sponsor OK')"
 
 Nếu full builder báo thiếu dependency Sponsor, quay lại mục này. Không cài package vào Python hệ thống và không chép credential vào repository.
 
+### Compatibility Gate vnstock_data
+
+Public builder hiện chỉ hỗ trợ cặp đã kiểm định `distribution vnstock_data 3.2.7`
+và `module.__version__ 3.2.2`. Registry
+machine-readable nằm tại `config/vnstock_compat_registry.json`; gate kiểm tra
+version exact, API surface bắt buộc và schema DataFrame trước khi render. Schema
+không nhận dạng, thiếu canonical field hoặc version/API chưa được kiểm định đều
+fail-closed với hướng xử lý tiếng Việt. Gate dùng đúng interpreter đang chạy
+builder và ghi `schema-fingerprint.json` vào work directory (artifact này không
+thuộc repository public).
+Các đơn vị trong fingerprint chỉ là assumptions của builder và luôn ghi
+`not_verified`; compatibility gate không tuyên bố đã kiểm định đơn vị nguồn.
+
+Khi nâng version, không sửa alias theo suy đoán: tạo đợt kiểm định riêng, cập
+nhật registry với cặp version exact và capability, bổ sung fake DataFrame cho shape
+mới cùng fingerprint/units, chạy toàn bộ regression và public guard, sau đó mới
+đổi `tested_version`. Giữ cặp version cũ trong registry chỉ khi cả hai
+đã có fixture và được kiểm định; nếu chưa, gate phải chặn.
+
 ## Chạy
 
 ```bash
