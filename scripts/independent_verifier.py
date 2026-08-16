@@ -3945,18 +3945,53 @@ def verify_period_integrity(req, html):
                 # các định chế tài chính khác (ví dụ bảo hiểm), chỉ đánh dấu N/A
                 # khi CSV balance thực sự không có cột tồn kho. Nếu nguồn có cột
                 # Inventory thì vẫn phải đối chiếu, tránh bỏ lọt mutation raw.
-                inventory_column_present = any(
-                    any(alias == str(h).strip().lower() or alias in str(h).strip().lower()
-                        for alias in aliases)
-                    for h in rows[0].keys()
-                )
+                inventory_source_col = None
+                for alias in aliases:
+                    inventory_source_col = next(
+                        (h for h in rows[0].keys() if str(h).strip().lower() == alias), None
+                    )
+                    if inventory_source_col:
+                        break
+                    inventory_source_col = next(
+                        (h for h in rows[0].keys() if alias in str(h).strip().lower()), None
+                    )
+                    if inventory_source_col:
+                        break
+
+                # Một số schema chứng khoán vẫn xuất header `inventories` nhưng
+                # để trống toàn bộ các năm. Đó vẫn là N/A, không phải một oracle
+                # số. Chỉ coi cột là có dữ liệu khi ít nhất một năm trong contract
+                # chứa số hữu hạn; partial-missing vẫn đi vào đối chiếu fail-closed.
+                import math as _math
+                contract_years = {str(y) for y in years_int}
+                inventory_column_has_values = False
+                if inventory_source_col:
+                    for source_row in rows:
+                        if str(source_row.get("period", "")).strip() not in contract_years:
+                            continue
+                        try:
+                            if _math.isfinite(float(source_row.get(inventory_source_col))):
+                                inventory_column_has_values = True
+                                break
+                        except (TypeError, ValueError):
+                            continue
+                inventory_contract_has_values = False
+                for contract_item in fin.get(arr_key, []) or []:
+                    try:
+                        if _math.isfinite(float(contract_item)):
+                            inventory_contract_has_values = True
+                            break
+                    except (TypeError, ValueError):
+                        continue
                 if ("bank" in sector_cfg.lower()
                         or ((financial_schema or statement_type == "financial_institution")
-                            and not inventory_column_present)):
+                            and not inventory_column_has_values
+                            and not inventory_contract_has_values)):
                     per_field[canonical] = {
-                        "not_applicable": "financial-statement schema — không có hàng tồn kho",
+                        "not_applicable": "financial-statement schema — không có dữ liệu hàng tồn kho khả dụng",
                         "oracle": ("source-pack income column Total Operating Income" if financial_schema
                                    else f"statement_type={statement_type or 'banking'}"),
+                        "source_column": inventory_source_col,
                     }
                     continue
             # P0 (Sol checkpoint 2): chọn cột theo ALIAS ƯU TIÊN CỐ ĐỊNH (thứ tự danh

@@ -241,6 +241,80 @@ def test_req062_financial_schema_raw_inventory_must_be_verified():
             for x in evidence["failures"]
         ), evidence
 
+        # Partial missing không được biến thành N/A: khi các kỳ khác có số thật,
+        # một kỳ raw + contract cùng null vẫn phải fail-closed.
+        value["financials"]["inventory_fin"] = inventory[:]
+        value["financials"]["inventory_fin"][0] = None
+        write_json(sidecar, value)
+        balance_path = os.path.join(source, "balance_sheet_sponsor.csv")
+        with open(balance_path, newline="") as f:
+            balance_rows = list(csv.reader(f))
+        balance_rows[1][-1] = ""
+        with open(balance_path, "w", newline="") as f:
+            csv.writer(f).writerows(balance_rows)
+        ok, evidence = iv.verify_period_integrity(REQ["REQ-062"], "<html></html>")
+        assert not ok and any(
+            x.get("code") == "PERIOD_VALUE_PAIR_MISMATCH" and x.get("field") == "inventory"
+            for x in evidence["failures"]
+        ), evidence
+
+
+def test_req062_financial_schema_blank_inventory_column_is_na():
+    with tempfile.TemporaryDirectory(prefix="req062_inventory_blank_") as work:
+        iv.REPORT = os.path.join(work, "TEST_Complete_Report.html")
+        open(iv.REPORT, "w").write("<html></html>")
+        years = [2021, 2022, 2023, 2024, 2025]
+        financials = {
+            "years": [str(y) for y in years],
+            "revenue": [10] * 5, "netProfit": [1] * 5, "eps": [1] * 5,
+            "totalAssets": [100] * 5, "equity": [50] * 5,
+            "capex": [1] * 5, "cfo": [1] * 5,
+            "inventory_fin": [None] * 5,
+        }
+        write_json(os.path.join(work, "verified-dashboard-data.json"), {
+            "sector": "finance", "statement_type": "financial_institution",
+            "financials": financials,
+        })
+        source = os.path.join(work, "source-pack")
+        os.makedirs(source)
+        specs = {
+            "income_statement_sponsor.csv": (
+                ["period", "report_period", "Total Operating Income", "Attributable to parent company", "EPS basic"],
+                lambda i: [years[i], "year", 10e9, 1e9, 1],
+            ),
+            "balance_sheet_sponsor.csv": (
+                ["period", "report_period", "Total Assets", "Owner's Equity", "inventories"],
+                lambda i: [years[i], "year", 100e9, 50e9, ""],
+            ),
+            "cash_flow_sponsor.csv": (
+                ["period", "report_period", "Purchases of fixed assets", "Net cash from operating activities"],
+                lambda i: [years[i], "year", -1e9, 1e9],
+            ),
+        }
+        for name, (header, row_fn) in specs.items():
+            with open(os.path.join(source, name), "w", newline="") as f:
+                w = csv.writer(f)
+                w.writerow(header)
+                for i in range(5):
+                    w.writerow(row_fn(i))
+
+        ok, evidence = iv.verify_period_integrity(REQ["REQ-062"], "<html></html>")
+        assert ok, evidence
+        inventory_evidence = evidence["per_field"]["inventory"]
+        assert inventory_evidence.get("source_column") == "inventories", evidence
+        assert "not_applicable" in inventory_evidence, evidence
+
+        # Raw toàn trống nhưng contract tự ghi số phải FAIL, không được N/A.
+        sidecar = os.path.join(work, "verified-dashboard-data.json")
+        value = json.load(open(sidecar))
+        value["financials"]["inventory_fin"][0] = 999.99
+        write_json(sidecar, value)
+        ok, evidence = iv.verify_period_integrity(REQ["REQ-062"], "<html></html>")
+        assert not ok and any(
+            x.get("code") == "PERIOD_VALUE_PAIR_MISMATCH" and x.get("field") == "inventory"
+            for x in evidence["failures"]
+        ), evidence
+
 
 if __name__ == "__main__":
     test_req022_old_period_and_mutation()
@@ -251,4 +325,6 @@ if __name__ == "__main__":
     print("✓ REQ-062 financial inventory N/A + zero mutation")
     test_req062_financial_schema_raw_inventory_must_be_verified()
     print("✓ REQ-062 financial raw inventory is verified + mutation caught")
-    print("✅ 4/4 Phase A wave 3 focused tests PASS")
+    test_req062_financial_schema_blank_inventory_column_is_na()
+    print("✓ REQ-062 blank inventory column is N/A")
+    print("✅ 5/5 Phase A wave 3 focused tests PASS")
