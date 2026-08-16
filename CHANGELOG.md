@@ -1,4 +1,4 @@
-## Compatibility 3.2.8 (2026-08-16)
+## Release 3.2.1 — Compatibility vnstock_data 3.2.8 (2026-08-16)
 
 - Hỗ trợ đồng thời `vnstock_data` distribution 3.2.7/module 3.2.2 và
   distribution 3.2.8/module 3.2.2.
