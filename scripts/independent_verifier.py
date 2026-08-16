@@ -3941,9 +3941,18 @@ def verify_period_integrity(req, html):
                     for h in income_rows[0].keys()
                 ))
                 statement_type = str(vdd.get("statement_type") or "").lower()
+                # Ngân hàng không có hàng tồn kho theo schema phân tích này. Với
+                # các định chế tài chính khác (ví dụ bảo hiểm), chỉ đánh dấu N/A
+                # khi CSV balance thực sự không có cột tồn kho. Nếu nguồn có cột
+                # Inventory thì vẫn phải đối chiếu, tránh bỏ lọt mutation raw.
+                inventory_column_present = any(
+                    any(alias == str(h).strip().lower() or alias in str(h).strip().lower()
+                        for alias in aliases)
+                    for h in rows[0].keys()
+                )
                 if ("bank" in sector_cfg.lower()
-                        or financial_schema
-                        or statement_type == "financial_institution"):
+                        or ((financial_schema or statement_type == "financial_institution")
+                            and not inventory_column_present)):
                     per_field[canonical] = {
                         "not_applicable": "financial-statement schema — không có hàng tồn kho",
                         "oracle": ("source-pack income column Total Operating Income" if financial_schema

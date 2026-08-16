@@ -187,6 +187,61 @@ def test_req062_financial_schema_inventory_na_and_zero_mutation():
         ), evidence
 
 
+def test_req062_financial_schema_raw_inventory_must_be_verified():
+    with tempfile.TemporaryDirectory(prefix="req062_inventory_raw_") as work:
+        iv.REPORT = os.path.join(work, "TEST_Complete_Report.html")
+        open(iv.REPORT, "w").write("<html></html>")
+        years = [2021, 2022, 2023, 2024, 2025]
+        inventory = [141.65, 130.66, 113.32, 100.48, 68.01]
+        financials = {
+            "years": [str(y) for y in years],
+            "revenue": [10] * 5, "netProfit": [1] * 5, "eps": [1] * 5,
+            "totalAssets": [100] * 5, "equity": [50] * 5,
+            "capex": [1] * 5, "cfo": [1] * 5,
+            "inventory_fin": inventory[:],
+        }
+        sidecar = os.path.join(work, "verified-dashboard-data.json")
+        write_json(sidecar, {
+            "sector": "insurance", "statement_type": "financial_institution",
+            "financials": financials,
+        })
+        source = os.path.join(work, "source-pack")
+        os.makedirs(source)
+        specs = {
+            "income_statement_sponsor.csv": (
+                ["period", "report_period", "Total Operating Income", "Attributable to parent company", "EPS basic"],
+                lambda i: [years[i], "year", 10e9, 1e9, 1],
+            ),
+            "balance_sheet_sponsor.csv": (
+                ["period", "report_period", "Total Assets", "Owner's Equity", "Inventory"],
+                lambda i: [years[i], "year", 100e9, 50e9, inventory[i] * 1e9],
+            ),
+            "cash_flow_sponsor.csv": (
+                ["period", "report_period", "Purchases of fixed assets", "Net cash from operating activities"],
+                lambda i: [years[i], "year", -1e9, 1e9],
+            ),
+        }
+        for name, (header, row_fn) in specs.items():
+            with open(os.path.join(source, name), "w", newline="") as f:
+                w = csv.writer(f)
+                w.writerow(header)
+                for i in range(5):
+                    w.writerow(row_fn(i))
+
+        ok, evidence = iv.verify_period_integrity(REQ["REQ-062"], "<html></html>")
+        assert ok, evidence
+        assert "not_applicable" not in evidence["per_field"]["inventory"], evidence
+
+        value = json.load(open(sidecar))
+        value["financials"]["inventory_fin"][0] = 999.99
+        write_json(sidecar, value)
+        ok, evidence = iv.verify_period_integrity(REQ["REQ-062"], "<html></html>")
+        assert not ok and any(
+            x.get("code") == "PERIOD_VALUE_PAIR_MISMATCH" and x.get("field") == "inventory"
+            for x in evidence["failures"]
+        ), evidence
+
+
 if __name__ == "__main__":
     test_req022_old_period_and_mutation()
     print("✓ REQ-022 old-period baseline + mutation")
@@ -194,4 +249,6 @@ if __name__ == "__main__":
     print("✓ REQ-059 zero/year/rounding baseline + mutation")
     test_req062_financial_schema_inventory_na_and_zero_mutation()
     print("✓ REQ-062 financial inventory N/A + zero mutation")
-    print("✅ 3/3 Phase A wave 3 focused tests PASS")
+    test_req062_financial_schema_raw_inventory_must_be_verified()
+    print("✓ REQ-062 financial raw inventory is verified + mutation caught")
+    print("✅ 4/4 Phase A wave 3 focused tests PASS")
