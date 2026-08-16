@@ -14,6 +14,7 @@ from statement_adapter import (  # noqa: E402
     completed_annual_rows,
     combine_statements,
     normalize_statement,
+    required_finite_series,
 )
 
 
@@ -193,6 +194,24 @@ class StatementAdapterTests(unittest.TestCase):
         with self.assertRaisesRegex(StatementSchemaError, "trùng"):
             normalize_statement(raw, "income")
 
+    def test_wide_duplicate_item_conflict_fails_closed(self):
+        raw = pd.DataFrame({
+            "item": ["IS_NET_REVENUE", "IS_NET_REVENUE"],
+            "2025": [100.0, 999.0],
+        })
+        with self.assertRaises(StatementSchemaError):
+            normalize_statement(raw, "income")
+
+    def test_wide_duplicate_item_complementary_values_coalesce(self):
+        raw = pd.DataFrame({
+            "item": ["IS_NET_REVENUE", "IS_NET_REVENUE"],
+            "2024": [100.0, float("nan")],
+            "2025": [float("nan"), 120.0],
+        })
+        got = normalize_statement(raw, "income")
+        self.assertEqual(got.loc["2024", "Net sales"], 100.0)
+        self.assertEqual(got.loc["2025", "Net sales"], 120.0)
+
     def test_zero_is_preserved_in_vnstock_328_long_schema(self):
         raw = pd.DataFrame({
             "period": ["2025"], "id": ["IS_NET_REVENUE"], "value": [0.0]
@@ -206,6 +225,17 @@ class StatementAdapterTests(unittest.TestCase):
         })
         got = normalize_statement(raw, "income")
         self.assertTrue(pd.isna(got.loc["2025", "Net sales"]))
+
+    def test_required_finite_series_blocks_partial_nan_but_keeps_zero(self):
+        frame = pd.DataFrame(
+            {"Net sales": [0.0, float("nan")]}, index=["2024", "2025"]
+        )
+        with self.assertRaises(StatementSchemaError):
+            required_finite_series(frame, "Net sales", "revenue")
+        self.assertEqual(
+            required_finite_series(frame.loc[["2024"]], "Net sales", "revenue"),
+            [0.0],
+        )
 
 
 if __name__ == "__main__":

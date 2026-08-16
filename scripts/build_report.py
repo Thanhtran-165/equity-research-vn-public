@@ -11,9 +11,10 @@ import sys, json, os, re, statistics, traceback, subprocess, math, tempfile
 from datetime import datetime, timedelta
 
 from runtime_environment import SponsorDependencyError, raise_sponsor_dependency
-from statement_adapter import combine_statements, completed_annual_rows
+from statement_adapter import combine_statements, completed_annual_rows, required_finite_series
 from task_state_runtime import sponsor_period_count
 from vnstock_compat import (
+    bind_reuse_artifacts,
     CompatibilityGateError,
     fetch_statement_frame,
     probe_api_surface,
@@ -262,9 +263,9 @@ def fetch():
     # REQ-062 bắt buộc đối chiếu; trước đây bank bỏ qua → PASS rỗng)
     capex_col=next((c for c in cf5.columns if re.search(r'Purchases of fixed assets|Mua sắm tài sản',c,re.I)),None)
     eps_col=next((c for c in inc5.columns if re.search(r'EPS.*basic|Earning.*per.*share',c,re.I)),None)
-    toi=[float(inc5[rev_col].iloc[i]) for i in range(len(inc5))] if rev_col and rev_col in inc5.columns else [0]*len(inc5)
-    npat=[float(inc5[npat_col].iloc[i]) for i in range(len(inc5))] if npat_col and npat_col in inc5.columns else [0]*len(inc5)
-    npatp=[float(inc5[npatp_col].iloc[i]) for i in range(len(inc5))] if npatp_col and npatp_col in inc5.columns else npat
+    toi=required_finite_series(inc5, rev_col, 'revenue/total operating income')
+    npat=required_finite_series(inc5, npat_col, 'net profit after tax')
+    npatp=required_finite_series(inc5, npatp_col, 'profit attributable to parent')
     # EPS reported là oracle. Phân biệt rõ ô thiếu (NaN) với số 0 được nguồn công
     # bố: 0 có thể là kết quả làm tròn của EPS rất nhỏ và KHÔNG được phép bị ghi đè
     # bằng NPAT/shares. Chỉ ô thiếu thật mới được back-calc ở bước sau.
@@ -276,8 +277,8 @@ def fetch():
         eps = [None] * len(inc5)
     eq_col=next((c for c in bal5.columns if re.search(r"Owner'?s?'?\s*equity|Vốn chủ sở hữu", c, re.I)),None)
     as_col=next((c for c in bal5.columns if c.upper()=="TOTAL ASSETS"),None)
-    equity=[float(bal5[eq_col].iloc[i]) for i in range(len(bal5))] if eq_col else [0]*len(bal5)
-    assets=[float(bal5[as_col].iloc[i]) for i in range(len(bal5))] if as_col else [0]*len(bal5)
+    equity=required_finite_series(bal5, eq_col, "owner's equity")
+    assets=required_finite_series(bal5, as_col, 'total assets')
     # CFO: P0-B (Sol checkpoint 2026-08-08) — nhận MỌI alias chuẩn (exact-first):
     # "Net cash inflows/(outflows) from operating activities" (mẫu sponsor) hoặc
     # "Net cash from operating activities". KHÔNG dùng truthiness (CFO=0 thật phải giữ 0).
@@ -303,7 +304,8 @@ def fetch():
     gross=[float(inc5[gp_col].iloc[i]) if inc5[gp_col].iloc[i] == inc5[gp_col].iloc[i] else None for i in range(len(inc5))] if gp_col and gp_col in inc5.columns else [None]*len(years)
     # liabilities
     liab_col=next((c for c in bal5.columns if re.search(r'Total Liabilities|TOTAL LIABILITIES',c,re.I)),None)
-    liab=[float(bal5[liab_col].iloc[i]) for i in range(len(bal5))] if liab_col else [(assets[i]-equity[i]) for i in range(len(bal5))]
+    liab=(required_finite_series(bal5, liab_col, 'total liabilities')
+          if liab_col else [(assets[i]-equity[i]) for i in range(len(bal5))])
     # price
     q=Quote(source='VCI',symbol=TICKER)
     # P0-01 (Sol 2026-08-09): end date ĐỘNG theo ngày chạy — KHÔNG khóa snapshot cũ
@@ -1044,6 +1046,9 @@ try:
         news = fetch_news()
         real_peers = fetch_peers()
         D,cagr,npat_growth,roe_hist,cp_back,cp_consistent,graham,pe5med=build_all(D_raw,tech,news,real_peers)
+        # Fingerprint schema được ghi trước derived data; khóa tiếp exact bytes
+        # của source-pack/oracle trước khi cho phép bất kỳ lần --reuse nào.
+        bind_reuse_artifacts(WORK)
     print(f'  DATA: pe={D["pe"]}, pb={D["pb"]}, mcap={D["marketCap"]} tỷ, capex_arr={len(D.get("capex",[]))}')
     periods = sponsor_period_count(WORK)
     task_state(D,cagr,roe_hist,cp_back,cp_consistent,news,periods)

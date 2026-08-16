@@ -25,6 +25,20 @@ from statement_adapter import StatementSchemaError, combine_statements, normaliz
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = ROOT / "config" / "vnstock_compat_registry.json"
 
+REUSE_ARTIFACT_PATHS = (
+    "source-pack/income_statement_sponsor.csv",
+    "source-pack/balance_sheet_sponsor.csv",
+    "source-pack/cash_flow_sponsor.csv",
+    "source-pack/price.csv",
+    "data/financials.json",
+    "data/balance_sheet.json",
+    "data/cash_flow.json",
+    "data/overview.json",
+    "data/peers.json",
+    "technical_active.json",
+    "verified-dashboard-data.json",
+)
+
 
 class CompatibilityGateError(RuntimeError):
     """Payload/runtime không thuộc contract đã kiểm định."""
@@ -492,6 +506,52 @@ def run_schema_gate(
     return payload
 
 
+def bind_reuse_artifacts(work_dir: Path | str) -> dict[str, Any]:
+    """Khóa fingerprint vào đúng bytes mà nhánh ``--reuse`` sẽ sử dụng.
+
+    Schema fingerprint ban đầu được ghi trước derived/render. Sau khi builder đã
+    ghi source-pack và các JSON oracle, hàm này bổ sung manifest SHA-256 exact.
+    Artifact thiếu không được bỏ qua vì reuse khi đó không còn tái lập được.
+    """
+    work = Path(work_dir)
+    path = work / "schema-fingerprint.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise CompatibilityGateError(
+            "Không thể bind artifact reuse vì thiếu schema-fingerprint.json hợp lệ."
+        ) from exc
+
+    stored_hash = payload.pop("fingerprint_sha256", None)
+    canonical = json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode()
+    if not stored_hash or stored_hash != hashlib.sha256(canonical).hexdigest():
+        raise CompatibilityGateError(
+            "Không thể bind artifact reuse vì schema fingerprint đã bị thay đổi."
+        )
+
+    manifest: dict[str, dict[str, Any]] = {}
+    for relative in REUSE_ARTIFACT_PATHS:
+        artifact = work / relative
+        if not artifact.is_file():
+            raise CompatibilityGateError(
+                f"Không thể bind artifact reuse vì thiếu file bắt buộc: {relative}."
+            )
+        content = artifact.read_bytes()
+        manifest[relative] = {
+            "sha256": hashlib.sha256(content).hexdigest(),
+            "size": len(content),
+        }
+    payload["reuse_artifacts"] = manifest
+    canonical = json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode()
+    payload["fingerprint_sha256"] = hashlib.sha256(canonical).hexdigest()
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return payload
+
+
 def validate_reused_schema_fingerprint(
     work_dir: Path | str,
     *,
@@ -553,6 +613,26 @@ def validate_reused_schema_fingerprint(
         raise CompatibilityGateError(
             "Fingerprint --reuse bị thay đổi hoặc hỏng checksum; hãy fetch lại trước khi render."
         )
+    manifest = payload.get("reuse_artifacts")
+    if not isinstance(manifest, dict) or set(manifest) != set(REUSE_ARTIFACT_PATHS):
+        raise CompatibilityGateError(
+            "Fingerprint --reuse thiếu manifest artifact source-bound đầy đủ; hãy fetch lại."
+        )
+    work = Path(work_dir)
+    for relative in REUSE_ARTIFACT_PATHS:
+        expected = manifest.get(relative) or {}
+        artifact = work / relative
+        try:
+            content = artifact.read_bytes()
+        except OSError as exc:
+            raise CompatibilityGateError(
+                f"Artifact --reuse bị thiếu: {relative}; hãy fetch lại."
+            ) from exc
+        actual_hash = hashlib.sha256(content).hexdigest()
+        if expected.get("sha256") != actual_hash or expected.get("size") != len(content):
+            raise CompatibilityGateError(
+                f"Artifact --reuse không khớp provenance: {relative}; hãy fetch lại."
+            )
     return payload
 
 

@@ -242,7 +242,11 @@ class CompatibilityGateTests(unittest.TestCase):
         self.assertEqual(result["status"], "supported")
 
     def test_reused_fingerprint_detects_tamper_and_stale_registry(self):
-        from vnstock_compat import validate_reused_schema_fingerprint
+        from vnstock_compat import (
+            REUSE_ARTIFACT_PATHS,
+            bind_reuse_artifacts,
+            validate_reused_schema_fingerprint,
+        )
 
         with tempfile.TemporaryDirectory() as work, tempfile.TemporaryDirectory() as reg_dir:
             registry_path = self._registry_copy(reg_dir)
@@ -253,6 +257,11 @@ class CompatibilityGateTests(unittest.TestCase):
                     runtime=self._runtime(),
                     registry_path=registry_path,
                 )
+                for relative in REUSE_ARTIFACT_PATHS:
+                    artifact_file = Path(work) / relative
+                    artifact_file.parent.mkdir(parents=True, exist_ok=True)
+                    artifact_file.write_text(f"fixture:{relative}\n", encoding="utf-8")
+                bind_reuse_artifacts(work)
                 self.assertEqual(
                     validate_reused_schema_fingerprint(work, registry_path=registry_path)["status"],
                     "supported",
@@ -273,11 +282,36 @@ class CompatibilityGateTests(unittest.TestCase):
                     runtime=self._runtime(),
                     registry_path=registry_path,
                 )
+            for relative in REUSE_ARTIFACT_PATHS:
+                artifact_file = Path(work) / relative
+                artifact_file.parent.mkdir(parents=True, exist_ok=True)
+                artifact_file.write_text(f"fixture:{relative}\n", encoding="utf-8")
+            bind_reuse_artifacts(work)
             registry = json.loads(registry_path.read_text())
             registry["registry_version"] = 99
             registry_path.write_text(json.dumps(registry), encoding="utf-8")
             with self.assertRaises(CompatibilityGateError):
                 validate_reused_schema_fingerprint(work, registry_path=registry_path)
+
+    def test_reused_fingerprint_detects_reused_data_tamper(self):
+        from vnstock_compat import (
+            REUSE_ARTIFACT_PATHS,
+            bind_reuse_artifacts,
+            validate_reused_schema_fingerprint,
+        )
+
+        with tempfile.TemporaryDirectory() as work:
+            run_schema_gate(old_frames(), work_dir=work, runtime=self._runtime())
+            for relative in REUSE_ARTIFACT_PATHS:
+                artifact = Path(work) / relative
+                artifact.parent.mkdir(parents=True, exist_ok=True)
+                artifact.write_text(f"fixture:{relative}\n", encoding="utf-8")
+            bind_reuse_artifacts(work)
+            validate_reused_schema_fingerprint(work)
+            reused_data = Path(work) / "verified-dashboard-data.json"
+            reused_data.write_text('{"revenue":[999999]}\n', encoding="utf-8")
+            with self.assertRaises(CompatibilityGateError):
+                validate_reused_schema_fingerprint(work)
 
     def test_unknown_shape_blocks_without_mapping(self):
         with self.assertRaises(CompatibilityGateError):

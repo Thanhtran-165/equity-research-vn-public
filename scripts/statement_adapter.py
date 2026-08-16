@@ -11,6 +11,7 @@ builder và verifier đã kiểm định sử dụng.
 from __future__ import annotations
 
 import re
+import math
 from datetime import date
 from typing import Iterable
 
@@ -32,7 +33,7 @@ def _looks_like_period(value) -> bool:
     return bool(re.fullmatch(r"20\d{2}(?:[-/]?Q[1-4])?", _period_text(value), re.I))
 
 
-def _wide_to_rows(frame: pd.DataFrame) -> pd.DataFrame | None:
+def _wide_to_rows(frame: pd.DataFrame, statement: str) -> pd.DataFrame | None:
     """Chuyển schema item×năm của Finance 3.2.7 sang period×field."""
     period_cols = [c for c in frame.columns if _looks_like_period(c)]
     if not period_cols:
@@ -42,9 +43,30 @@ def _wide_to_rows(frame: pd.DataFrame) -> pd.DataFrame | None:
         return None
     slim = frame[[item_col, *period_cols]].copy()
     slim[item_col] = slim[item_col].astype(str)
-    # Một vài payload có cùng item ở nhiều schema_group. Không cộng số liệu;
-    # lấy giá trị không-null đầu tiên và giữ fail-closed nếu không có gì dùng được.
-    slim = slim.drop_duplicates(subset=[item_col], keep="first").set_index(item_col)
+    # Một vài payload có cùng item ở nhiều schema_group. Chỉ coalesce khi các
+    # dòng bổ sung nhau hoặc lặp đúng cùng giá trị; hai giá trị khác nhau cho
+    # cùng item/kỳ là schema mơ hồ và phải bị chặn, không chọn dòng đầu.
+    merged_rows = []
+    for item, group in slim.groupby(item_col, sort=False, dropna=False):
+        merged = {item_col: item}
+        for period in period_cols:
+            values = [value for value in group[period].tolist() if not pd.isna(value)]
+            keys = []
+            for value in values:
+                try:
+                    key = ("number", float(value))
+                except (TypeError, ValueError, OverflowError):
+                    key = ("text", str(value).strip())
+                if key not in keys:
+                    keys.append(key)
+            if len(keys) > 1:
+                raise StatementSchemaError(
+                    f"{statement}: item trùng có giá trị mâu thuẫn "
+                    f"item={item!r}, period={_period_text(period)!r}"
+                )
+            merged[period] = values[0] if values else float("nan")
+        merged_rows.append(merged)
+    slim = pd.DataFrame(merged_rows).set_index(item_col)
     out = slim.T
     out.index = [_period_text(v) for v in out.index]
     out.index.name = "period"
@@ -97,7 +119,7 @@ def normalize_statement(frame: pd.DataFrame, statement: str) -> pd.DataFrame:
         out.index = [_period_text(v) for v in out.index]
         out.index.name = "period"
     else:
-        out = _wide_to_rows(frame)
+        out = _wide_to_rows(frame, statement)
         if out is None:
             raise StatementSchemaError(
                 f"{statement}: không tìm thấy period ở cột, index hoặc schema item×kỳ"
@@ -144,6 +166,19 @@ def completed_annual_rows(frame: pd.DataFrame, current_year: int | None = None) 
     cutoff = int(current_year or date.today().year) - 1
     mask = [int(str(period)[:4]) <= cutoff for period in rows.index]
     return rows.loc[mask]
+
+
+def required_finite_series(frame: pd.DataFrame, column: str | None, label: str) -> list[float]:
+    """Lấy metric bắt buộc và chặn mọi ô thiếu/NaN/inf theo đúng kỳ đã chọn."""
+    if not column or column not in frame.columns:
+        raise StatementSchemaError(f"thiếu metric bắt buộc sau normalize: {label}")
+    values = pd.to_numeric(frame[column], errors="coerce")
+    bad_periods = [str(period) for period, value in values.items() if not math.isfinite(float(value))]
+    if bad_periods:
+        raise StatementSchemaError(
+            f"metric bắt buộc {label} thiếu/không finite tại kỳ {bad_periods[:5]}"
+        )
+    return [float(value) for value in values.tolist()]
 
 
 def _alias(frame: pd.DataFrame, target: str, names: Iterable[str]) -> None:

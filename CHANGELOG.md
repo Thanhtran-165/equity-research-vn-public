@@ -8,6 +8,9 @@
   chứng khoán và bảo hiểm; giữ số 0 là dữ liệu thật, NaN/blank không biến thành 0.
 - Tồn kho toàn 0 của định chế tài chính được ghi N/A; mutation số liệu vẫn bị
   oracle source-pack bắt.
+- `--reuse` khóa SHA-256 exact của source-pack và toàn bộ oracle/render input;
+  thay một byte hoặc thiếu file đều fail-closed. Wide item trùng nhưng mâu thuẫn
+  và metric bắt buộc thiếu/NaN ở một năm được chọn cũng bị chặn trước render.
 
 ## verification-layer 0.3.0 — 2026-07-31 (V5 Wave — data provenance & narrative integrity)
 
