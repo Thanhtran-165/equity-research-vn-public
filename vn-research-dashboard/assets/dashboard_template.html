@@ -4,20 +4,17 @@
 <meta charset="UTF-8">
 <link rel="icon" href="data:,">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{TICKER}} · {{COMPANY_NAME}} | Investment Evidence Pack (1–3 năm)</title>
-    <meta name="description" content="Báo cáo nghiên cứu cổ phiếu {{COMPANY_NAME}} ({{TICKER}}) — investment evidence pack cho nhà đầu tư 1–3 năm, không khuyến nghị mua/bán.">
+    <title>{{HERO_TITLE}} | Hồ sơ phân tích (1–3 năm)</title>
+    <meta name="description" content="Hồ sơ phân tích {{HERO_TITLE}} dành cho nhà đầu tư 1–3 năm, không khuyến nghị mua/bán.">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{
   /* Hybrid dark clean — Bloomberg-ish, accent kìm */
   --bg-0:#0f1419; --bg-1:#13181f; --bg-2:#1a2029;
   --card:#161b22; --card-2:#1c232d;
   --border:rgba(255,255,255,0.08); --border-hot:rgba(245,166,35,0.45);
-  --text:#e6edf3; --text-dim:#8b949e; --text-faint:#565f6b;
+  --text:#e6edf3; --text-dim:#a1aab5; --text-faint:#8b949e;
   --amber:#f5a623; --amber-soft:rgba(245,166,35,0.14);
   --blue:#4a9eff; --blue-soft:rgba(74,158,255,0.14);
   --green:#3fb950; --green-soft:rgba(63,185,80,0.14);
@@ -25,23 +22,31 @@
   --purple:#a78bfa; --purple-soft:rgba(167,139,250,0.14);
   --grad-amber:linear-gradient(135deg,#f5a623 0%,#d48806 100%);
   --grad-blue:linear-gradient(135deg,#4a9eff 0%,#2670c8 100%);
-  --font-sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-  --font-mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,monospace;
+  /* Một họ chữ hệ thống duy nhất: ổn định khi mở offline trên macOS/Windows/Linux. */
+  --font-sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
+  --font-mono:var(--font-sans);
   --radius:12px; --radius-sm:8px;
   --chart-grid:rgba(255,255,255,0.05);
 }
 *{margin:0;padding:0;box-sizing:border-box}
 html{scroll-behavior:smooth}
-body{background:var(--bg-0);color:var(--text);font-family:var(--font-sans);line-height:1.55;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+body{background:var(--bg-0);color:var(--text);font-family:var(--font-sans);font-weight:400;line-height:1.55;overflow-x:hidden;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+button,input,select,textarea{font:inherit}
 .mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.fin-table,.data-table,.history-stat-value,.stat-value,.kpi-val,.kpi-value,.price-now{font-variant-numeric:tabular-nums}
 .pos{color:var(--green)} .neg{color:var(--red)} .neu{color:var(--amber)} .blue{color:var(--blue)} .dim{color:var(--text-dim)} .faint{color:var(--text-faint)}
 a{color:var(--blue);text-decoration:none}
 a:hover{text-decoration:underline}
+a:focus-visible,button:focus-visible{outline:3px solid var(--amber);outline-offset:3px;border-radius:6px}
+.skip-link{position:fixed;left:16px;top:8px;z-index:1200;transform:translateY(-150%);background:var(--amber);color:#1a1206;padding:8px 12px;border-radius:var(--radius-sm);font-weight:700}
+.skip-link:focus{transform:translateY(0)}
+.sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
 
 /* ---------- chrome ---------- */
 .progress-bar{position:fixed;top:0;left:0;height:3px;width:0;background:var(--grad-amber);z-index:1000;transition:width .1s ease-out}
 .topnav{position:sticky;top:0;z-index:900;background:rgba(15,20,25,0.88);backdrop-filter:blur(16px);border-bottom:1px solid var(--border)}
-.topnav-inner{max-width:1480px;margin:0 auto;padding:0 24px;display:flex;align-items:center;gap:4px;overflow-x:auto;scrollbar-width:thin;height:52px}
+.topnav-inner{max-width:1480px;margin:0 auto;padding:0 24px;display:flex;align-items:center;gap:4px;overflow-x:auto;scrollbar-width:none;height:52px}
+.topnav-inner::-webkit-scrollbar{display:none}
 .topnav-brand{display:flex;align-items:center;gap:8px;font-weight:700;font-size:13px;color:var(--text);white-space:nowrap;padding-right:16px;border-right:1px solid var(--border);margin-right:8px}
 .topnav-brand .dot{width:8px;height:8px;border-radius:50%;background:var(--amber);box-shadow:0 0 8px var(--amber)}
 .topnav-link{font-size:12px;color:var(--text-dim);padding:6px 10px;border-radius:6px;white-space:nowrap;transition:all .15s;font-weight:500}
@@ -68,7 +73,7 @@ a:hover{text-decoration:underline}
 .toc-sidebar-num{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;border-radius:4px;background:var(--card-2);color:var(--text-faint);font-size:10px;font-weight:700;font-family:var(--font-mono);flex-shrink:0;margin-top:1px}
 .toc-sidebar-item:hover .toc-sidebar-num{background:var(--amber);color:#1a1206}
 .toc-sidebar-item .toc-sidebar-label{flex:1}
-@media(max-width:1100px){.layout-main{grid-template-columns:1fr;gap:0}.toc-sidebar{display:none}}
+@media(max-width:1280px){.layout-main{grid-template-columns:1fr;gap:0}.toc-sidebar{display:none}}
 
 /* ---------- disclaimer block (cuối báo cáo, trước source) ---------- */
 .disclaimer{border-radius:var(--radius);padding:22px 24px;border:1px solid var(--border);border-left:4px solid var(--amber);background:rgba(245,166,35,0.04);margin:24px 0 32px}
@@ -79,9 +84,6 @@ a:hover{text-decoration:underline}
 .disclaimer li{font-size:13px;color:var(--text-dim);line-height:1.7;margin-bottom:6px}
 .disclaimer li strong{color:var(--text)}
 .disclaimer-foot{margin-top:14px!important;padding-top:12px;border-top:1px solid var(--border);font-style:italic}
-.qlist{list-style:none!important;padding-left:0!important}
-.qlist li{display:flex;align-items:center;gap:10px}
-.qlist .qbadge{flex-shrink:0;min-width:54px;text-align:center}
 .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
 .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
 .grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
@@ -98,6 +100,12 @@ a:hover{text-decoration:underline}
 
 /* ---------- hero ---------- */
 .hero{background:linear-gradient(135deg,rgba(245,166,35,0.06),rgba(74,158,255,0.04));border:1px solid var(--border);border-radius:16px;padding:32px;margin-bottom:24px;position:relative;overflow:hidden}
+.hero-card{display:flex;align-items:stretch;justify-content:space-between;gap:28px;background:linear-gradient(135deg,rgba(245,166,35,0.06),rgba(74,158,255,0.04));border:1px solid var(--border);border-radius:16px;padding:28px;margin-bottom:24px;position:relative;overflow:hidden}
+.hero-left{flex:1 1 42%;min-width:0;display:flex;flex-direction:column;justify-content:center}
+.hero-right{flex:1 1 58%;min-width:0;display:flex;align-items:center}
+.hero-badge{display:inline-flex;align-items:center;align-self:flex-start;background:var(--grad-amber);color:#1a1206;padding:5px 14px;border-radius:999px;font-weight:700;font-size:12px;letter-spacing:0.5px}
+.hero-title{font-size:38px;line-height:1.12;font-weight:800;margin-top:14px;letter-spacing:-0.8px;overflow-wrap:anywhere}
+.hero-sub{color:var(--text-dim);margin-top:10px;font-size:14px;max-width:54ch}
 .hero-top{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;flex-wrap:wrap}
 .ticker-badge{display:inline-flex;align-items:center;gap:8px;background:var(--grad-amber);color:#1a1206;padding:5px 14px;border-radius:999px;font-weight:700;font-size:12px;letter-spacing:0.5px}
 .disclaimer-badge{display:inline-flex;align-items:center;gap:6px;background:var(--red-soft);color:var(--red);padding:4px 12px;border-radius:999px;font-weight:600;font-size:11px;border:1px solid rgba(248,81,73,0.3);margin-left:8px}
@@ -109,10 +117,12 @@ a:hover{text-decoration:underline}
 .price-meta{margin-top:6px;color:var(--text-dim);font-size:12px}
 .price-meta .delta{font-weight:600;margin-left:6px}
 .kpi-strip{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-top:28px}
+.kpi-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;width:100%}
 .kpi{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;transition:border-color .2s}
 .kpi:hover{border-color:var(--border-hot)}
 .kpi-label{font-size:10px;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.8px;font-weight:600}
 .kpi-value{font-size:22px;font-weight:700;margin-top:6px;font-family:var(--font-mono)}
+.kpi-val{font-size:20px;line-height:1.25;font-weight:700;margin-top:6px;font-family:var(--font-mono);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .kpi-delta{font-size:11px;margin-top:4px;font-weight:600}
 
 /* ---------- card ---------- */
@@ -122,6 +132,30 @@ a:hover{text-decoration:underline}
 .card-sub{font-size:11px;color:var(--text-faint);margin-top:2px}
 .chart-wrap{position:relative;height:300px}
 .chart-wrap.sm{height:220px} .chart-wrap.lg{height:360px} .chart-wrap.xs{height:180px}
+.chart-row{margin:16px 0}
+.chart-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;position:relative;overflow:hidden}
+.height-wrapper{width:100%;min-width:0}
+
+/* ---------- generated content grids ---------- */
+.thesis-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px}
+.thesis-grid>:is(div,article){background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px;min-width:0}
+.thesis-grid>:is(div,article):first-child{border-top:3px solid var(--green)}
+.thesis-grid>:is(div,article):last-child{border-top:3px solid var(--red)}
+.thesis-grid h3{font-size:13px;margin-bottom:10px}
+.thesis-grid ul{list-style:none;padding:0;margin:0;display:grid;gap:8px}
+.thesis-grid li{color:var(--text-dim);font-size:12.5px;line-height:1.55;padding:8px 0;border-bottom:1px solid var(--border)}
+.thesis-grid li:last-child{border-bottom:none}
+.ref-list{list-style:none;padding:0;margin:14px 0;display:grid;gap:7px}
+.ref-list li{background:var(--card);border:1px solid var(--border);border-radius:7px;padding:9px 11px;color:var(--text-dim);font-size:11.5px;line-height:1.5}
+.meta-note{font-size:11px!important;color:var(--text-faint)!important;margin-top:10px!important}
+.insight{margin-top:14px;font-family:var(--font-sans)}
+.insight h3{font-family:inherit;font-size:15px;line-height:1.4;font-weight:700;letter-spacing:-0.1px;color:var(--text);margin:0 0 14px}
+.insight p{font-family:inherit;font-size:13px;line-height:1.65;font-weight:400;color:var(--text-dim);margin:0 0 10px}
+.insight p:last-child{margin-bottom:0}
+.news-list{display:grid;gap:8px;margin:12px 0;padding-left:22px}
+.news-list li{color:var(--text-dim);line-height:1.55;padding:5px 0}
+.news-list a{color:var(--blue);text-decoration:none}
+.news-list a:hover{text-decoration:underline}
 
 /* ---------- table ---------- */
 .fin-table{width:100%;border-collapse:collapse;font-size:12.5px;font-family:var(--font-mono)}
@@ -132,10 +166,30 @@ a:hover{text-decoration:underline}
 .fin-table .col-latest{background:var(--amber-soft);color:var(--amber);font-weight:700}
 .fin-table .row-strong td{font-weight:700;background:rgba(255,255,255,0.02)}
 .fin-table .row-total td{border-top:2px solid var(--border);font-weight:700}
-.table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius)}
+.table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius);margin:10px 0}
+
+/* Nội dung do builder sinh: chuẩn hóa list trực tiếp trong section. */
+.section>ul:not([class]){list-style:none;padding:0;margin:14px 0;display:grid;gap:8px}
+.section>ul:not([class])>li{position:relative;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:11px 14px 11px 34px;color:var(--text-dim);font-size:13px;line-height:1.55}
+.section>ul:not([class])>li::before{content:'›';position:absolute;left:14px;top:10px;color:var(--amber);font-size:17px;font-weight:800;line-height:1}
+.section>ul:not([class])>li strong,.section>ul:not([class])>li b{color:var(--text)}
+.section>p{color:var(--text-dim);line-height:1.65;margin:10px 0}
+
+/* ---------- financial history ---------- */
+.history-panel{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-top:16px}
+.history-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}
+.history-title{font-size:15px;font-weight:700;letter-spacing:-0.1px}
+.history-caption{font-size:11px;color:var(--text-faint);margin-top:4px}
+.source-chip{display:inline-flex;align-items:center;white-space:nowrap;border:1px solid rgba(74,158,255,0.24);background:var(--blue-soft);color:var(--blue);border-radius:999px;padding:3px 9px;font-size:10px;font-weight:700;letter-spacing:0.2px;vertical-align:middle}
+.audit-source{display:none!important}
+.history-highlights{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:14px}
+.history-stat{background:var(--card-2);border:1px solid var(--border);border-radius:var(--radius);padding:15px 16px;min-width:0}
+.history-stat-label{font-size:10px;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.65px;font-weight:700}
+.history-stat-value{font-family:var(--font-mono);font-size:21px;line-height:1.25;font-weight:700;color:var(--text);margin-top:7px;font-variant-numeric:tabular-nums}
+.history-stat-meta{font-size:11px;color:var(--text-dim);margin-top:5px;line-height:1.45}
 
 /* ---------- callout / highlight ---------- */
-.callout{border-radius:var(--radius);padding:16px 18px;border:1px solid var(--border);border-left:3px solid var(--amber);background:var(--card)}
+.callout{border-radius:var(--radius);padding:16px 18px;border:1px solid var(--border);border-left:3px solid var(--amber);background:var(--card);margin:10px 0}
 .callout.warn{border-left-color:var(--red)} .callout.good{border-left-color:var(--green)} .callout.info{border-left-color:var(--blue)} .callout.neu{border-left-color:var(--amber)}
 .callout-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;display:flex;align-items:center;gap:8px}
 .callout-body{font-size:13px;color:var(--text-dim);line-height:1.6}
@@ -209,111 +263,11 @@ a:hover{text-decoration:underline}
 .seg-meta{width:90px;text-align:right;font-family:var(--font-mono);font-size:11px;flex-shrink:0}
 
 /* ---------- quality badge ---------- */
-.qbadge{display:inline-block;font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:4px;letter-spacing:0.3px;font-family:var(--font-mono)}
-.qbadge-HIGHQ{background:var(--green-soft);color:var(--green)} .qbadge-MEDQ{background:var(--amber-soft);color:var(--amber)} .qbadge-LOWQ{background:var(--red-soft);color:var(--red)}
-
-/* ---------- disclaimer block (cuối báo cáo, trước source) ---------- */
-.disclaimer{border-radius:var(--radius);padding:22px 24px;border:1px solid var(--border);border-left:4px solid var(--amber);background:rgba(245,166,35,0.04);margin:24px 0 32px}
-.disclaimer-title{font-size:14px;font-weight:700;color:var(--amber);margin-bottom:8px}
-.disclaimer-title.sub{font-size:12px;text-transform:uppercase;letter-spacing:0.5px;margin-top:16px;color:var(--text-dim)}
-.disclaimer p{font-size:13px;color:var(--text-dim);line-height:1.65;margin:8px 0}
-.disclaimer ol,.disclaimer ul{margin:8px 0 8px 4px;padding-left:22px}
-.disclaimer li{font-size:13px;color:var(--text-dim);line-height:1.7;margin-bottom:6px}
-.disclaimer li strong{color:var(--text)}
-.disclaimer-foot{margin-top:14px!important;padding-top:12px;border-top:1px solid var(--border);font-style:italic}
-.qlist{list-style:none!important;padding-left:0!important}
-.qlist li{display:flex;align-items:center;gap:10px}
-.qlist .qbadge{flex-shrink:0;min-width:54px;text-align:center}
 
 /* ---------- footer ---------- */
 footer{margin-top:64px;padding-top:24px;border-top:1px solid var(--border);color:var(--text-faint);font-size:11px;line-height:1.6}
 footer p{margin-bottom:6px}
-.disclaimer{background:var(--card);border:1px solid var(--border);border-left:3px solid var(--red);border-radius:var(--radius);padding:14px 18px;margin:16px 0;font-size:11.5px;color:var(--text-dim)}
-
-/* ---------- value chain stack ---------- */
-.vc-stack{display:flex;flex-direction:column;gap:6px;margin:14px 0}
-.vc-layer{display:grid;grid-template-columns:130px 1fr 90px 90px;align-items:center;gap:12px;padding:10px 14px;border-radius:8px;background:var(--card-2);border:1px solid var(--border);font-size:12px;position:relative;transition:border-color .2s}
-.vc-layer.upstream-most{border-left:3px solid var(--red)}
-.vc-layer.upstream{border-left:3px solid var(--amber)}
-.vc-layer.oracle{border-left:3px solid var(--blue);background:rgba(74,158,255,0.06)}
-.vc-layer.downstream{border-left:3px solid var(--text-faint)}
-.vc-name{font-weight:600;color:var(--text)}
-.vc-name .sub{display:block;font-size:10.5px;color:var(--text-faint);font-weight:400;margin-top:2px}
-.vc-players{color:var(--text-dim);font-size:11.5px}
-.vc-rent{font-family:var(--font-mono);font-weight:700;font-size:11px;text-align:center}
-.vc-pillar{font-family:var(--font-mono);font-size:10.5px;text-align:center;font-weight:600}
-.vc-legend{display:flex;gap:16px;font-size:11px;color:var(--text-dim);margin-top:10px;flex-wrap:wrap}
-.vc-legend span{display:inline-flex;align-items:center;gap:6px}
-.vc-legend .swatch{width:10px;height:10px;border-radius:2px;display:inline-block}
-
-/* ---------- rent location gauge ---------- */
-.rent-bar{display:flex;height:28px;border-radius:6px;overflow:hidden;margin:12px 0;border:1px solid var(--border)}
-.rent-seg{display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#0f1419;font-family:var(--font-mono);padding:0 4px;text-align:center;line-height:1.1}
-.rent-labels{display:flex;justify-content:space-between;font-size:10px;color:var(--text-faint);margin-bottom:4px;font-family:var(--font-mono)}
-
-/* ---------- barrier table ---------- */
-.barrier-table{width:100%;border-collapse:collapse;font-size:11.5px}
-.barrier-table th,.barrier-table td{padding:9px 8px;text-align:left;border-bottom:1px solid var(--border);vertical-align:top}
-.barrier-table th{font-size:9.5px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-faint);font-weight:600}
-.barrier-table td.barrier-name{font-weight:600;color:var(--text);width:23%}
-.barrier-height{display:inline-flex;align-items:center;gap:2px}
-.barrier-bar{display:inline-block;width:8px;height:14px;background:var(--bg-2);border-radius:2px;margin-right:1px}
-.barrier-bar.on-red{background:var(--red)} .barrier-bar.on-amber{background:var(--amber)} .barrier-bar.on-green{background:var(--green)}
-.trend-up{color:var(--green)} .trend-down{color:var(--red)} .trend-flat{color:var(--text-dim)}
-
-/* ---------- dependency matrix ---------- */
-.dep-matrix{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden;margin:14px 0;font-size:11.5px}
-.dep-matrix>div{padding:10px 12px;border-bottom:1px solid var(--border);border-right:1px solid var(--border)}
-.dep-matrix>div:nth-child(3n){border-right:none}
-.dep-matrix>div:nth-last-child(-n+3){border-bottom:none}
-.dep-matrix .head{background:var(--card-2);font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-faint)}
-.dep-layer{font-weight:600;color:var(--text)}
-.dep-verdict{font-weight:600}
-.lock-high{color:var(--green)} .lock-med{color:var(--amber)} .lock-low{color:var(--red)}
-
-/* ---------- technical score ---------- */
-.tech-score-card{display:flex;align-items:center;gap:18px;padding:18px;border-radius:var(--radius);background:linear-gradient(135deg,var(--card),var(--card-2));border:1px solid var(--border);margin-bottom:16px}
-.tech-score-num{font-size:48px;font-weight:800;font-family:var(--font-mono);line-height:1;min-width:80px;text-align:center}
-.tech-verdict-pill{display:inline-block;font-size:11px;font-weight:700;padding:5px 14px;border-radius:999px;text-transform:uppercase;letter-spacing:0.5px;margin-top:4px}
-.verdict-strong-sell{background:var(--red-soft);color:var(--red);border:1px solid rgba(248,81,73,0.4)}
-.verdict-sell{background:rgba(248,81,73,0.2);color:var(--red)}
-.verdict-hold{background:var(--amber-soft);color:var(--amber)}
-.verdict-buy{background:rgba(63,185,80,0.2);color:var(--green)}
-.verdict-strong-buy{background:var(--green-soft);color:var(--green);border:1px solid rgba(63,185,80,0.4)}
-.tech-score-bar{flex:1;height:14px;background:linear-gradient(90deg,var(--red) 0%,var(--amber) 50%,var(--green) 100%);border-radius:7px;position:relative;min-width:200px}
-.tech-score-marker{position:absolute;top:-4px;width:4px;height:22px;background:var(--text);border-radius:2px;transform:translateX(-50%)}
-.tech-score-labels{display:flex;justify-content:space-between;font-size:9.5px;color:var(--text-faint);font-family:var(--font-mono);margin-top:4px}
-
-.signal-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px}
-.signal-cell{background:var(--bg-2);border-radius:7px;padding:10px;font-size:11.5px;border-left:3px solid var(--border)}
-.signal-cell.bull{border-left-color:var(--green)} .signal-cell.bear{border-left-color:var(--red)} .signal-cell.neut{border-left-color:var(--amber)}
-.signal-cell .sig-name{font-weight:600;color:var(--text);font-size:11px}
-.signal-cell .sig-val{font-family:var(--font-mono);color:var(--text-dim);margin-top:2px;font-size:10.5px}
-
-/* ---------- candlestick mini ---------- */
-.candle-mini-wrap{position:relative;height:280px;margin:12px 0}
-
-/* ---------- non-advice footer (PROFILE mode) ---------- */
-.non-advice-panel{background:rgba(245,166,35,0.06);border:1px solid rgba(245,166,35,0.25);border-left:3px solid var(--amber);border-radius:var(--radius);padding:14px 18px;margin-top:16px}
-.non-advice-panel h4{font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:var(--amber);margin-bottom:8px;font-weight:700}
-.non-advice-panel ul{list-style:none;padding:0;font-size:11.5px;color:var(--text-dim);line-height:1.65}
-.non-advice-panel li{padding:3px 0;padding-left:16px;position:relative}
-.non-advice-panel li::before{content:'›';position:absolute;left:0;color:var(--amber)}
-
-/* ---------- analyst table ---------- */
-.analyst-table{width:100%;border-collapse:collapse;font-size:11.5px}
-.analyst-table th,.analyst-table td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--border);vertical-align:top}
-.analyst-table th{font-size:9.5px;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-faint);font-weight:600}
-.analyst-table td.firm{font-weight:600;color:var(--text)}
-.analyst-table td.target{font-family:var(--font-mono);font-weight:600}
-.analyst-table td.thesis{font-size:11px;color:var(--text-dim);line-height:1.5}
-.rating-buy{color:var(--green);font-weight:600} .rating-hold{color:var(--amber);font-weight:600} .rating-sell{color:var(--red);font-weight:600}
-
-/* ---------- glossary ---------- */
-.glossary-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin:14px 0}
-.gloss-item{background:var(--card-2);border:1px solid var(--border);border-left:3px solid var(--blue);border-radius:8px;padding:10px 12px;font-size:12px}
-.gloss-term{font-weight:700;color:var(--blue);font-family:var(--font-mono);font-size:11.5px}
-.gloss-def{color:var(--text-dim);margin-top:3px;line-height:1.5}
+.footer-disclaimer{background:var(--card);border:1px solid var(--border);border-left:3px solid var(--red);border-radius:var(--radius);padding:14px 18px;margin:16px 0;font-size:11.5px;color:var(--text-dim)}
 
 /* ---------- plain-language callout (💡 Nói cách khác) ---------- */
 .callout.plain{border-left-color:var(--amber);background:rgba(245,166,35,0.05)}
@@ -331,108 +285,43 @@ a.xref:hover{background:var(--blue-soft);border-bottom-style:solid}
   .grid-4,.grid-3{grid-template-columns:1fr 1fr}
   .exec-grid{grid-template-columns:1fr 1fr}
   .kpi-strip{grid-template-columns:repeat(3,1fr)}
+  .hero-card{gap:20px;padding:24px}
+  .kpi-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
   .scenario-grid{grid-template-columns:1fr}
   .grid-2-1,.grid-1-2{grid-template-columns:1fr}
+}
+@media(max-width:900px){
+  .thesis-grid{grid-template-columns:1fr}
 }
 @media(max-width:600px){
   .container{padding:16px 14px 60px}
   .hero{padding:20px}
+  .hero-card{display:block;padding:20px}
+  .hero-right{margin-top:20px}
+  .hero-title{font-size:28px}
+  .hero-sub{font-size:13px}
   .company-name{font-size:28px}
   .price-now{font-size:34px}
   .grid-4,.grid-3,.grid-2{grid-template-columns:1fr}
   .exec-grid{grid-template-columns:1fr}
   .kpi-strip{grid-template-columns:1fr 1fr}
+  .kpi-grid{grid-template-columns:1fr 1fr;gap:8px}
+  .kpi{padding:12px}
+  .kpi-label{font-size:9px}
+  .kpi-val{font-size:16px}
+  .history-panel{padding:14px}
+  .history-head{display:block}
+  .history-highlights{grid-template-columns:1fr}
+  .history-stat-value{font-size:19px}
+  .section>ul:not([class])>li{padding:10px 12px 10px 30px}
+  .thesis-grid{grid-template-columns:1fr}
+  .chart-card{padding:12px}
   .topnav-brand{display:none}
   .section-title h2{font-size:18px}
   .price-block{text-align:left}
 }
 
-/* ===== KDH EXTRA CSS — comprehensive coverage for generated classes (lesson 16) ===== */
-/* Data table (alternative to fin-table, used in some sections) */
-.data-table{width:100%;border-collapse:collapse;font-size:12.5px;font-family:var(--font-mono)}
-.data-table th,.data-table td{padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);border-left:1px solid var(--border)}
-.data-table th:first-child,.data-table td:first-child{text-align:left;font-family:var(--font-sans);font-weight:500;color:var(--text-dim);border-left:none}
-.data-table thead th{font-size:10.5px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-faint);font-weight:600;background:var(--card-2)}
-
-/* Insight frame container */
-.insight-frame{background:linear-gradient(135deg,rgba(245,166,35,0.04),rgba(74,158,255,0.03));border:1px solid var(--border);border-radius:var(--radius);padding:22px;margin-top:14px}
-
-/* Honest correction callout (stronger red border) */
-.honest-correction{border-left:4px solid var(--red)!important;background:rgba(248,81,73,0.06)!important}
-.callout.honest-correction .callout-title{color:var(--red)}
-
-/* Footnote */
-.footnote{font-size:11px;color:var(--text-faint);margin-top:8px;font-style:italic;line-height:1.5}
-
-/* Analyst card variants */
-.analyst-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px}
-.analyst-card.bull{border-top:3px solid var(--green)} .analyst-card.bear{border-top:3px solid var(--red)}
-
-/* Checklist grid (no nesting — lesson 17: place directly in section, not inside grid-2) */
-.checklist-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
-@media(max-width:900px){.checklist-grid{grid-template-columns:1fr}}
-
-/* Cap card (capital lens) */
-.cap-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
-.cap-card h4{font-size:13px;margin-bottom:10px}
-
-/* Val card (valuation) */
-.val-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;border-left:3px solid var(--blue)}
-
-/* Stat (re-declared to ensure present; skeleton has it but reinforce) */
-.stat{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px}
-.stat-mini{background:var(--card-2);border:1px solid var(--border);border-radius:8px;padding:12px}
-.stat-mini .stat-label{font-size:9.5px}
-.stat-mini .stat-value{font-size:18px;margin-top:2px}
-
-/* Verdict card */
-.verdict-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px;border-left:3px solid var(--green)}
-
-/* Sources block */
-.sources{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-top:14px}
-.sources h4{font-size:13px;margin-bottom:10px}
-
-/* Consensus grid (analyst) */
-.consensus-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
-@media(max-width:900px){.consensus-grid{grid-template-columns:1fr 1fr}}
-
-/* Stale warning */
-.stale-warning{border-left:4px solid var(--amber);background:rgba(245,166,35,0.08);padding:12px 16px;border-radius:8px;margin:10px 0}
-.stale-warning h4{color:var(--amber);font-size:12px;text-transform:uppercase;margin-bottom:6px}
-
-/* Exec grid reinforce */
-.exec-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
-@media(max-width:1100px){.exec-grid{grid-template-columns:1fr 1fr}}
-@media(max-width:600px){.exec-grid{grid-template-columns:1fr}}
-
-/* Scenario grid reinforce */
-.scenario-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
-@media(max-width:900px){.scenario-grid{grid-template-columns:1fr}}
-
-/* Non-advice panel reinforce */
-.non-advice-panel{background:rgba(245,166,35,0.06);border:1px solid rgba(245,166,35,0.25);border-left:3px solid var(--amber);border-radius:var(--radius);padding:14px 18px;margin-top:16px}
-
-/* Language policy banner */
-.lang-policy{background:var(--card-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:11.5px;color:var(--text-dim);margin:10px 0}
-
-/* Archetype card */
-.archetype-card{background:linear-gradient(135deg,rgba(245,166,35,0.06),rgba(167,139,250,0.04));border:1px solid var(--border);border-left:3px solid var(--purple);border-radius:var(--radius);padding:16px}
-
-/* Grid-3 reinforce */
-.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
-@media(max-width:900px){.grid-3{grid-template-columns:1fr}}
-
-/* Table wrap borders reinforcement */
-.table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius);margin:10px 0}
-.fin-table th,.fin-table td{border-bottom:1px solid var(--border)}
-.fin-table th{border-bottom:2px solid var(--border)}
-
-/* Callout variants reinforcement */
-.callout{border-radius:var(--radius);padding:16px 18px;border:1px solid var(--border);border-left:3px solid var(--amber);background:var(--card);margin:10px 0}
-.callout.warn{border-left-color:var(--red)} .callout.good{border-left-color:var(--green)} .callout.info{border-left-color:var(--blue)}
-
-
-/* ===== frontend-polish: beautiful-shadows (MengTo) + animation-on-scroll ===== */
+/* ---------- depth and restrained motion ---------- */
 :root {
   --sh-sm: 0px 2px 3px -1px rgba(0,0,0,0.1), 0px 1px 0px 0px rgba(25,28,33,0.02), 0px 0px 0px 1px rgba(25,28,33,0.08);
   --sh-md: 0px 0px 0px 1px rgba(0,0,0,0.06), 0px 1px 1px -0.5px rgba(0,0,0,0.06), 0px 3px 3px -1.5px rgba(0,0,0,0.06), 0px 6px 6px -3px rgba(0,0,0,0.06), 0px 12px 12px -6px rgba(0,0,0,0.06), 0px 24px 24px -12px rgba(0,0,0,0.06);
@@ -441,59 +330,52 @@ a.xref:hover{background:var(--blue-soft);border-bottom-style:solid}
 @keyframes aosIn { 0% { opacity: 0; transform: translateY(28px); filter: blur(6px); } 100% { opacity: 1; transform: translateY(0); filter: blur(0); } }
 .aos { opacity: 0; animation: aosIn 0.7s ease-out 0.05s both; animation-play-state: paused; }
 .aos.animate { animation-play-state: running; }
-@media (prefers-reduced-motion: reduce) { .aos { opacity: 1 !important; animation: none !important; filter: none !important; } }
+@media (prefers-reduced-motion: reduce) {
+  html{scroll-behavior:auto}
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
+  .aos{opacity:1!important;animation:none!important;filter:none!important}
+}
 
-/* Apply shadows to all card types */
-.card { box-shadow: var(--sh-md) !important; }
-.kpi { box-shadow: var(--sh-sm) !important; }
-.kpi:hover { transform: translateY(-2px); box-shadow: var(--sh-md) !important; }
-.callout { box-shadow: var(--sh-sm) !important; }
-.data-table { box-shadow: var(--sh-sm) !important; }
-.stat, .stat-mini { box-shadow: var(--sh-sm) !important; }
-.val-card, .vc-card { box-shadow: var(--sh-sm) !important; }
-.scenario-card { box-shadow: var(--sh-md) !important; }
-.cl-card { box-shadow: var(--sh-sm) !important; }
-.cap-card { box-shadow: var(--sh-sm) !important; }
-.consensus-item { box-shadow: var(--sh-sm) !important; }
-.analyst-card { box-shadow: var(--sh-sm) !important; }
-.insight-frame { box-shadow: var(--sh-md) !important; }
-.honest-correction { box-shadow: var(--sh-sm) !important; }
-.verdict-card { box-shadow: var(--sh-sm) !important; }
-.stale-warning { box-shadow: var(--sh-sm) !important; }
-.toc-sidebar { box-shadow: var(--sh-md) !important; }
+.card,.chart-card,.history-panel,.thesis-grid>:is(div,article),.toc-sidebar{box-shadow:var(--sh-md)}
+.kpi,.callout,.stat,.scenario-card,.ref-list li,.footer-disclaimer{box-shadow:var(--sh-sm)}
+.kpi:hover{transform:translateY(-2px);box-shadow:var(--sh-md)}
 
 </style>
 </head>
 <body>
+<a class="skip-link" href="#main-content">Bỏ qua điều hướng</a>
 <div class="progress-bar" id="progressBar"></div>
-<nav class="topnav" id="topnav">
+<nav class="topnav" id="topnav" aria-label="Điều hướng báo cáo">
   <div class="topnav-inner">
-    <div class="topnav-brand"><span class="dot"></span>{{TICKER}} · Evidence Pack</div>
+    <div class="topnav-brand"><span class="dot"></span>{{TICKER}} · Hồ sơ phân tích</div>
     <a class="topnav-link" href="#sec-hero" data-target="sec-hero">Tổng quan</a>
-    <a class="topnav-link" href="#sec-exec" data-target="sec-exec">TL;DR</a>
-    <a class="topnav-link" href="#sec-biz" data-target="sec-biz">Business</a>
+    <a class="topnav-link" href="#sec-exec" data-target="sec-exec">Tóm tắt</a>
+    <a class="topnav-link" href="#sec-biz" data-target="sec-biz">Doanh nghiệp</a>
     <a class="topnav-link" href="#sec-industry" data-target="sec-industry">Ngành</a>
-    <a class="topnav-link" href="#sec-history" data-target="sec-history">10 năm</a>
-    <a class="topnav-link" href="#sec-segment" data-target="sec-segment">Segment</a>
-    <a class="topnav-link" href="#sec-thesis" data-target="sec-thesis">Thesis</a>
+    <a class="topnav-link" href="#sec-history" data-target="sec-history">5 năm</a>
+    <a class="topnav-link" href="#sec-segment" data-target="sec-segment">Phân khúc</a>
+    <a class="topnav-link" href="#sec-thesis" data-target="sec-thesis">Luận điểm</a>
     <a class="topnav-link" href="#sec-valuation" data-target="sec-valuation">Định giá</a>
-    <a class="topnav-link" href="#sec-peer" data-target="sec-peer">Peer</a>
-    <a class="topnav-link" href="#sec-bs" data-target="sec-bs">BS & FCF</a>
+    <a class="topnav-link" href="#sec-peer" data-target="sec-peer">So sánh ngành</a>
+    <a class="topnav-link" href="#sec-bs" data-target="sec-bs">Cân đối & dòng tiền</a>
     <a class="topnav-link" href="#sec-risk" data-target="sec-risk">Rủi ro</a>
     <a class="topnav-link" href="#sec-33k" data-target="sec-33k">Vốn</a>
     <a class="topnav-link" href="#sec-scenario" data-target="sec-scenario">Kịch bản</a>
-    <a class="topnav-link" href="#sec-checklist" data-target="sec-checklist">Checklist</a>
-    <a class="topnav-link" href="#sec-insight-1" data-target="sec-insight-1">★ Insight 1</a>
-    <!-- ADD nav links for insight-2/3/4 if more frames generated -->
-    <a class="topnav-link" href="#sec-tech" data-target="sec-tech">Technical</a>
-    <a class="topnav-link" href="#sec-analyst" data-target="sec-analyst">Analyst</a>
-    <a class="topnav-link" href="#sec-glossary" data-target="sec-glossary">📖 Thuật ngữ</a>
+    <a class="topnav-link" href="#sec-checklist" data-target="sec-checklist">Kiểm tra</a>
+    <a class="topnav-link" href="#sec-insight-1" data-target="sec-insight-1">Góc nhìn 1</a>
+    <a class="topnav-link" href="#sec-insight-2" data-target="sec-insight-2">Góc nhìn 2</a>
+    <a class="topnav-link" href="#sec-insight-3" data-target="sec-insight-3">Góc nhìn 3</a>
+    <a class="topnav-link" href="#sec-tech" data-target="sec-tech">Kỹ thuật</a>
+    <a class="topnav-link" href="#sec-tech-profile" data-target="sec-tech-profile">Biến động</a>
+    <a class="topnav-link" href="#sec-news" data-target="sec-news">Tin tức</a>
+    <a class="topnav-link" href="#sec-analyst" data-target="sec-analyst">Tổng hợp</a>
+    <a class="topnav-link" href="#sec-glossary" data-target="sec-glossary">Thuật ngữ</a>
     <a class="topnav-link" href="#sec-source" data-target="sec-source">Nguồn</a>
   </div>
 </nav>
 <button class="back-top" id="backTop" aria-label="Lên đầu trang">↑</button>
 
-<div class="container">
+<main class="container" id="main-content">
 
 <!-- ============ SECTION 1: HERO + KPI ============ -->
 <section id="sec-hero" class="section" style="margin-top:8px;scroll-margin-top:60px">
@@ -506,62 +388,62 @@ a.xref:hover{background:var(--blue-soft);border-bottom-style:solid}
 
 <!-- ============ SECTION 2: EXECUTIVE SUMMARY ============ -->
 <section id="sec-exec" class="section">
-  <div class="section-title aos"><span class="num">2</span><h2>Executive Summary — TL;DR</h2><div class="divider"></div></div>
+  <div class="section-title aos"><span class="num">2</span><h2>Tóm tắt điều hành</h2><div class="divider"></div></div>
   {{SEC_EXEC_HTML}}
 </section>
 
 <!-- ============ SECTION 3: BUSINESS 101 ============ -->
 <section id="sec-biz" class="section">
-  <div class="section-title aos"><span class="num">3</span><h2>Business 101 — {{COMPANY_NAME}} kiếm tiền như thế nào?</h2><div class="divider"></div></div>
+  <div class="section-title aos"><span class="num">3</span><h2>{{COMPANY_NAME}} kiếm tiền như thế nào?</h2><div class="divider"></div></div>
   {{SEC_BIZ_HTML}}
 </section>
 
 <!-- ============ SECTION 4: INDUSTRY POSITION ============ -->
 <section id="sec-industry" class="section">
-  <div class="section-title aos"><span class="num">4</span><h2>Industry Position — {{COMPANY_NAME}} đứng ở đâu trong ngành?</h2><div class="divider"></div></div>
+  <div class="section-title aos"><span class="num">4</span><h2>{{COMPANY_NAME}} đứng ở đâu trong ngành?</h2><div class="divider"></div></div>
   {{SEC_INDUSTRY_HTML}}
 </section>
 
-<!-- ============ SECTION 5: FINANCIAL HISTORY 10Y ============ -->
+<!-- ============ SECTION 5: FINANCIAL HISTORY ============ -->
 <section id="sec-history" class="section">
-  <div class="section-title aos"><span class="num">5</span><h2>Lịch sử tài chính 5 năm (FY2021–FY2025)</h2><div class="divider"></div></div>
+  <div class="section-title aos"><span class="num">5</span><h2>Lịch sử tài chính 5 năm (FY{{HISTORY_START_YEAR}}–FY{{HISTORY_END_YEAR}})</h2><div class="divider"></div></div>
   {{SEC_HISTORY_HTML}}
 </section>
 
 <!-- ============ SECTION 6: SEGMENT ANALYSIS ============ -->
 <section id="sec-segment" class="section">
-  <div class="section-title aos"><span class="num">6</span><h2>Segment Analysis</h2><div class="divider"></div></div>
+  <div class="section-title aos"><span class="num">6</span><h2>Phân tích cơ cấu hoạt động</h2><div class="divider"></div></div>
   {{SEC_SEGMENT_HTML}}
   {{SEC_ANALYTICS_HTML}}
 </section>
 
 <!-- ============ SECTION 7: INVESTMENT THESIS ============ -->
 <section id="sec-thesis" class="section">
-  <div class="section-title aos"><span class="num">7</span><h2>Investment Thesis — 1-3 năm</h2><div class="divider"></div></div>
+  <div class="section-title aos"><span class="num">7</span><h2>Luận điểm đầu tư — 1–3 năm</h2><div class="divider"></div></div>
   {{SEC_THESIS_HTML}}
 </section>
 
 <!-- ============ SECTION 8: VALUATION ============ -->
 <section id="sec-valuation" class="section">
-  <div class="section-title aos"><span class="num">8</span><h2>Valuation — P/E & P/B vs lịch sử</h2><div class="divider"></div></div>
+  <div class="section-title aos"><span class="num">8</span><h2>Định giá — P/E và P/B so với lịch sử</h2><div class="divider"></div></div>
   {{SEC_VALUATION_HTML}}
 </section>
 
 <!-- ============ SECTION 9: PEER COMPARISON ============ -->
 <section id="sec-peer" class="section">
-  <div class="section-title aos"><span class="num">9</span><h2>Peer Comparison</h2><div class="divider"></div></div>
+  <div class="section-title aos"><span class="num">9</span><h2>So sánh doanh nghiệp cùng ngành</h2><div class="divider"></div></div>
   {{SEC_PEER_HTML}}
 </section>
 
 <!-- ============ SECTION 10: BALANCE SHEET & FCF ============ -->
 <section id="sec-bs" class="section">
-  <div class="section-title aos"><span class="num">10</span><h2>Balance Sheet, Capex & Free Cash Flow</h2><div class="divider"></div></div>
+  <div class="section-title aos"><span class="num">10</span><h2>{{BS_SECTION_TITLE}}</h2><div class="divider"></div></div>
   {{SEC_BS_HTML}}
 </section>
 
 <!-- ============ SECTION 11: RISK MATRIX ============ -->
 <section id="sec-risk" class="section">
-  <div class="section-title aos"><span class="num">11</span><h2>Risk Matrix</h2><div class="divider"></div></div>
+  <div class="section-title aos"><span class="num">11</span><h2>Ma trận rủi ro</h2><div class="divider"></div></div>
   {{SEC_RISK_HTML}}
 </section>
 
@@ -573,30 +455,30 @@ a.xref:hover{background:var(--blue-soft);border-bottom-style:solid}
 
 <!-- ============ SECTION 13: SCENARIO ANALYSIS ============ -->
 <section id="sec-scenario" class="section">
-  <div class="section-title aos"><span class="num">13</span><h2>Scenario Analysis — 1–3 năm</h2><div class="divider"></div></div>
+  <div class="section-title aos"><span class="num">13</span><h2>Phân tích kịch bản — 1–3 năm</h2><div class="divider"></div></div>
   {{SEC_SCENARIO_HTML}}
 </section>
 
 <!-- ============ SECTION 14: FINAL CHECKLIST ============ -->
 <section id="sec-checklist" class="section">
-  <div class="section-title aos"><span class="num">14</span><h2>Final Investment Checklist</h2><div class="divider"></div></div>
+  <div class="section-title aos"><span class="num">14</span><h2>Danh sách kiểm tra đầu tư</h2><div class="divider"></div></div>
   {{SEC_CHECKLIST_HTML}}
 </section>
 
 <!-- ============ SECTIONS 15-17: DYNAMIC INSIGHTS (1-3) ============ -->
 <!-- SECTION 15: SPECIAL INSIGHT 1 -->
 <section id="sec-insight-1" class="section">
-  <div class="section-title aos"><span class="num" style="background:linear-gradient(135deg,#f5a623,#4a9eff);color:#0f1419">★</span><h2>Special Insight 1 — {{INSIGHT_1_SUBTITLE}}</h2><div class="divider"></div></div>
+  <div class="section-title aos"><span class="num">15</span><h2>Góc nhìn chuyên sâu 1 — {{INSIGHT_1_SUBTITLE}}</h2><div class="divider"></div></div>
   {{SEC_INSIGHT_1_HTML}}
 </section>
 <!-- SECTION 16: SPECIAL INSIGHT 2 -->
 <section id="sec-insight-2" class="section">
-  <div class="section-title aos"><span class="num" style="background:linear-gradient(135deg,#f5a623,#4a9eff);color:#0f1419">★</span><h2>Special Insight 2 — {{INSIGHT_2_SUBTITLE}}</h2><div class="divider"></div></div>
+  <div class="section-title aos"><span class="num">16</span><h2>Góc nhìn chuyên sâu 2 — {{INSIGHT_2_SUBTITLE}}</h2><div class="divider"></div></div>
   {{SEC_INSIGHT_2_HTML}}
 </section>
 <!-- SECTION 17: SPECIAL INSIGHT 3 -->
 <section id="sec-insight-3" class="section">
-  <div class="section-title aos"><span class="num" style="background:linear-gradient(135deg,#f5a623,#4a9eff);color:#0f1419">★</span><h2>Special Insight 3 — {{INSIGHT_3_SUBTITLE}}</h2><div class="divider"></div></div>
+  <div class="section-title aos"><span class="num">17</span><h2>Góc nhìn chuyên sâu 3 — {{INSIGHT_3_SUBTITLE}}</h2><div class="divider"></div></div>
   {{SEC_INSIGHT_3_HTML}}
 </section>
 
@@ -605,93 +487,90 @@ a.xref:hover{background:var(--blue-soft);border-bottom-style:solid}
 
 <!-- ============ SECTION 18: TECHNICAL — ACTIVE ============ -->
 <section id="sec-tech" class="section">
-  <div class="section-title aos"><span class="num">18</span><h2>Phân tích kỹ thuật — Mode ACTIVE</h2><span class="tag red">TIMING/VERDICT</span><div class="divider"></div></div>
+  <div class="section-title aos"><span class="num">18</span><h2>Phân tích kỹ thuật</h2><span class="tag red">Tín hiệu dữ liệu</span><div class="divider"></div></div>
   {{SEC_TECH_HTML}}
 </section>
 
 <!-- ============ SECTION 19: TECHNICAL — PROFILE (NON-ADVICE) ============ -->
 <section id="sec-tech-profile" class="section">
-  <div class="section-title aos"><span class="num">19</span><h2>Phân tích kỹ thuật — Mode PROFILE</h2><span class="tag amber">NON-ADVICE</span><div class="divider"></div></div>
+  <div class="section-title aos"><span class="num">19</span><h2>Hồ sơ biến động giá</h2><span class="tag amber">Không phải khuyến nghị</span><div class="divider"></div></div>
   {{SEC_TECH_PROFILE_HTML}}
 </section>
 
-<!-- ============ SECTION 20: ANALYST SYNTHESIS ============ -->
+<!-- ============ SECTION 20: NEWS DIGEST ============ -->
+<section id="sec-news" class="section">
+  <div class="section-title aos"><span class="num">20</span><h2>Tin tức 30 ngày</h2><div class="divider"></div></div>
+  {{SEC_NEWS_HTML}}
+</section>
+
+<!-- ============ SECTION 21: ANALYST SYNTHESIS ============ -->
 <section id="sec-analyst" class="section">
-  <div class="section-title aos"><span class="num">20</span><h2>Analyst Synthesis</h2><span class="tag blue">BULL/BEAR</span><div class="divider"></div></div>
+  <div class="section-title aos"><span class="num">21</span><h2>Tổng hợp hai chiều</h2><span class="tag blue">Thuận lợi / Bất lợi</span><div class="divider"></div></div>
   {{SEC_ANALYST_HTML}}
 </section>
 
-<!-- ============ SECTION 21: GLOSSARY ============ -->
+<!-- ============ SECTION 22: GLOSSARY ============ -->
 <section id="sec-glossary" class="section">
-  <div class="section-title aos"><span class="num">21</span><h2>📖 Hướng dẫn đọc — Giải thích thuật ngữ</h2><div class="divider"></div></div>
+  <div class="section-title aos"><span class="num">22</span><h2>📖 Hướng dẫn đọc — Giải thích thuật ngữ</h2><div class="divider"></div></div>
   {{SEC_GLOSSARY_HTML}}
 </section>
 
 </div><!-- /layout-content -->
 
 <!-- ============ TOC SIDEBAR (sticky, phải) ============ -->
-<aside class="toc-sidebar" id="tocSidebar">
-  <div class="toc-sidebar-head">📑 Mục lục</div>
-  <div class="toc-sidebar-hint">22 phần · click để nhảy đến</div>
+<aside class="toc-sidebar" id="tocSidebar" aria-labelledby="toc-heading">
+  <h2 class="toc-sidebar-head" id="toc-heading">Mục lục</h2>
+  <div class="toc-sidebar-hint">23 phần · chọn mục để di chuyển</div>
   <ul class="toc-sidebar-list">
-    <li><a class="toc-sidebar-item" href="#sec-hero"><span class="toc-sidebar-num">1</span><span class="toc-sidebar-label">Hero & KPI</span></a></li><li><a class="toc-sidebar-item" href="#sec-exec"><span class="toc-sidebar-num">2</span><span class="toc-sidebar-label">TL;DR</span></a></li><li><a class="toc-sidebar-item" href="#sec-biz"><span class="toc-sidebar-num">3</span><span class="toc-sidebar-label">Business 101</span></a></li><li><a class="toc-sidebar-item" href="#sec-industry"><span class="toc-sidebar-num">4</span><span class="toc-sidebar-label">Ngành</span></a></li><li><a class="toc-sidebar-item" href="#sec-history"><span class="toc-sidebar-num">5</span><span class="toc-sidebar-label">5 năm</span></a></li><li><a class="toc-sidebar-item" href="#sec-segment"><span class="toc-sidebar-num">6</span><span class="toc-sidebar-label">Segment</span></a></li><li><a class="toc-sidebar-item" href="#sec-thesis"><span class="toc-sidebar-num">7</span><span class="toc-sidebar-label">Thesis</span></a></li><li><a class="toc-sidebar-item" href="#sec-valuation"><span class="toc-sidebar-num">8</span><span class="toc-sidebar-label">Định giá</span></a></li><li><a class="toc-sidebar-item" href="#sec-peer"><span class="toc-sidebar-num">9</span><span class="toc-sidebar-label">Peer</span></a></li><li><a class="toc-sidebar-item" href="#sec-bs"><span class="toc-sidebar-num">10</span><span class="toc-sidebar-label">BS & FCF</span></a></li><li><a class="toc-sidebar-item" href="#sec-risk"><span class="toc-sidebar-num">11</span><span class="toc-sidebar-label">Rủi ro</span></a></li><li><a class="toc-sidebar-item" href="#sec-33k"><span class="toc-sidebar-num">12</span><span class="toc-sidebar-label">800tr VND</span></a></li><li><a class="toc-sidebar-item" href="#sec-scenario"><span class="toc-sidebar-num">13</span><span class="toc-sidebar-label">Kịch bản</span></a></li><li><a class="toc-sidebar-item" href="#sec-checklist"><span class="toc-sidebar-num">14</span><span class="toc-sidebar-label">Checklist</span></a></li><li><a class="toc-sidebar-item" href="#sec-insight-1"><span class="toc-sidebar-num">★1</span><span class="toc-sidebar-label">{{INSIGHT_1_SHORT_LABEL}}</span></a></li><li><a class="toc-sidebar-item" href="#sec-insight-2"><span class="toc-sidebar-num">★2</span><span class="toc-sidebar-label">{{INSIGHT_2_SHORT_LABEL}}</span></a></li><li><a class="toc-sidebar-item" href="#sec-insight-3"><span class="toc-sidebar-num">★3</span><span class="toc-sidebar-label">{{INSIGHT_3_SHORT_LABEL}}</span></a></li><li><a class="toc-sidebar-item" href="#sec-tech"><span class="toc-sidebar-num">18</span><span class="toc-sidebar-label">Technical</span></a></li><li><a class="toc-sidebar-item" href="#sec-tech-profile"><span class="toc-sidebar-num">19</span><span class="toc-sidebar-label">Profile</span></a></li><li><a class="toc-sidebar-item" href="#sec-analyst"><span class="toc-sidebar-num">20</span><span class="toc-sidebar-label">Analyst</span></a></li><li><a class="toc-sidebar-item" href="#sec-glossary"><span class="toc-sidebar-num">21</span><span class="toc-sidebar-label">Thuật ngữ</span></a></li><li><a class="toc-sidebar-item" href="#sec-source"><span class="toc-sidebar-num">22</span><span class="toc-sidebar-label">Nguồn</span></a></li>
+    <li><a class="toc-sidebar-item" href="#sec-hero"><span class="toc-sidebar-num">1</span><span class="toc-sidebar-label">Tổng quan</span></a></li><li><a class="toc-sidebar-item" href="#sec-exec"><span class="toc-sidebar-num">2</span><span class="toc-sidebar-label">Tóm tắt</span></a></li><li><a class="toc-sidebar-item" href="#sec-biz"><span class="toc-sidebar-num">3</span><span class="toc-sidebar-label">Doanh nghiệp</span></a></li><li><a class="toc-sidebar-item" href="#sec-industry"><span class="toc-sidebar-num">4</span><span class="toc-sidebar-label">Ngành</span></a></li><li><a class="toc-sidebar-item" href="#sec-history"><span class="toc-sidebar-num">5</span><span class="toc-sidebar-label">5 năm</span></a></li><li><a class="toc-sidebar-item" href="#sec-segment"><span class="toc-sidebar-num">6</span><span class="toc-sidebar-label">Phân khúc</span></a></li><li><a class="toc-sidebar-item" href="#sec-thesis"><span class="toc-sidebar-num">7</span><span class="toc-sidebar-label">Luận điểm</span></a></li><li><a class="toc-sidebar-item" href="#sec-valuation"><span class="toc-sidebar-num">8</span><span class="toc-sidebar-label">Định giá</span></a></li><li><a class="toc-sidebar-item" href="#sec-peer"><span class="toc-sidebar-num">9</span><span class="toc-sidebar-label">So sánh ngành</span></a></li><li><a class="toc-sidebar-item" href="#sec-bs"><span class="toc-sidebar-num">10</span><span class="toc-sidebar-label">Cân đối & dòng tiền</span></a></li><li><a class="toc-sidebar-item" href="#sec-risk"><span class="toc-sidebar-num">11</span><span class="toc-sidebar-label">Rủi ro</span></a></li><li><a class="toc-sidebar-item" href="#sec-33k"><span class="toc-sidebar-num">12</span><span class="toc-sidebar-label">Ba mức vốn</span></a></li><li><a class="toc-sidebar-item" href="#sec-scenario"><span class="toc-sidebar-num">13</span><span class="toc-sidebar-label">Kịch bản</span></a></li><li><a class="toc-sidebar-item" href="#sec-checklist"><span class="toc-sidebar-num">14</span><span class="toc-sidebar-label">Kiểm tra</span></a></li><li><a class="toc-sidebar-item" href="#sec-insight-1"><span class="toc-sidebar-num">15</span><span class="toc-sidebar-label">{{INSIGHT_1_SHORT_LABEL}}</span></a></li><li><a class="toc-sidebar-item" href="#sec-insight-2"><span class="toc-sidebar-num">16</span><span class="toc-sidebar-label">{{INSIGHT_2_SHORT_LABEL}}</span></a></li><li><a class="toc-sidebar-item" href="#sec-insight-3"><span class="toc-sidebar-num">17</span><span class="toc-sidebar-label">{{INSIGHT_3_SHORT_LABEL}}</span></a></li><li><a class="toc-sidebar-item" href="#sec-tech"><span class="toc-sidebar-num">18</span><span class="toc-sidebar-label">Kỹ thuật</span></a></li><li><a class="toc-sidebar-item" href="#sec-tech-profile"><span class="toc-sidebar-num">19</span><span class="toc-sidebar-label">Biến động</span></a></li><li><a class="toc-sidebar-item" href="#sec-news"><span class="toc-sidebar-num">20</span><span class="toc-sidebar-label">Tin tức</span></a></li><li><a class="toc-sidebar-item" href="#sec-analyst"><span class="toc-sidebar-num">21</span><span class="toc-sidebar-label">Tổng hợp</span></a></li><li><a class="toc-sidebar-item" href="#sec-glossary"><span class="toc-sidebar-num">22</span><span class="toc-sidebar-label">Thuật ngữ</span></a></li><li><a class="toc-sidebar-item" href="#sec-source"><span class="toc-sidebar-num">23</span><span class="toc-sidebar-label">Nguồn</span></a></li>
   </ul>
 </aside>
 
 </div><!-- /layout-main -->
 
 <!-- ============ DISCLAIMER (cho nhà đầu tư đọc trước khi ra quyết định) ============ -->
-<div class="disclaimer">
+<div class="disclaimer" role="note" aria-label="Lưu ý sử dụng báo cáo">
   <div class="disclaimer-title">⚠️ Lưu ý cho nhà đầu tư</div>
-  <p>Báo cáo này do AI tổng hợp từ nhiều nguồn công khai. Mặc dù mỗi con số quan trọng đều có trích nguồn, <strong>AI có thể sai</strong> — nguồn lỗi, dữ liệu cũ, hoặc hiểu sai.</p>
+  <p>Báo cáo được dựng từ dữ liệu có cấu trúc và các phép kiểm tự động. <strong>Hệ thống vẫn có thể sai</strong> do nguồn lỗi, dữ liệu cũ hoặc quy tắc diễn giải chưa phù hợp.</p>
   <div class="disclaimer-title sub">3 kỷ luật khi đọc</div>
   <ol>
-    <li><strong>Đếm nguồn.</strong> Mỗi số quan trọng (doanh thu, EPS, P/E, FCF) nên có ít nhất 2 nguồn độc lập khớp nhau. Chỉ 1 nguồn = chưa chắc.</li>
+    <li><strong>Kiểm tra hồ sơ nguồn.</strong> Đối chiếu các số quan trọng với tài liệu gốc trong phần Nguồn và chất lượng dữ liệu.</li>
     <li><strong>Số bất thường = dừng.</strong> Con số khiến bạn thấy "ồ hay" hoặc "ồ tệ" → Google 30 giây để đối chiếu. Đó là lúc dễ tin nhất và AI dễ sai nhất.</li>
-    <li><strong>Nếu là tiền của tôi.</strong> Trước khi quyết định, hỏi: "Tôi có dám đặt $800 triệu dựa trên con số này không?" Nếu chưa dám → verify thêm.</li>
+    <li><strong>Nếu là tiền của tôi.</strong> Trước khi quyết định, hãy tự hỏi liệu bằng chứng hiện có đã đủ cho quy mô khoản vốn dự kiến hay chưa.</li>
   </ol>
-  <div class="disclaimer-title sub">Nhãn chất lượng dữ liệu</div>
-  <p>Mỗi số có nhãn ở bảng Data Quality bên dưới:</p>
-  <ul class="qlist">
-    <li><span class="qbadge qbadge-HIGHQ">HIGHQ</span> nhiều nguồn chính thống khớp nhau</li>
-    <li><span class="qbadge qbadge-MEDQ">MEDQ</span> 1-2 nguồn, cần đối chiếu thêm</li>
-    <li><span class="qbadge qbadge-LOWQ">LOWQ</span> phỏng đoán, không nên đặt quyết định lớn dựa trên số này</li>
-  </ul>
   <p class="disclaimer-foot">AI không thay thế phán đoán của bạn. Bạn là người ra quyết định cuối cùng với tiền của mình.</p>
 </div>
 
-<!-- ============ SECTION 22: SOURCE APPENDIX ============ -->
+<!-- ============ SECTION 23: SOURCE APPENDIX ============ -->
 <section id="sec-source" class="section">
-  <div class="section-title aos"><span class="num">22</span><h2>Source Appendix & Data Quality</h2><div class="divider"></div></div>
+  <div class="section-title aos"><span class="num">23</span><h2>Nguồn và chất lượng dữ liệu</h2><div class="divider"></div></div>
   {{SEC_SOURCE_HTML}}
 </section>
 
-</div><!-- /container -->
+</main><!-- /container -->
 
 <footer>
   <div class="container" style="padding-top:0">
-    <div class="disclaimer">
+    <div class="footer-disclaimer">
       <strong style="color:var(--red)">⚠️ Miễn trừ trách nhiệm.</strong>
-      Báo cáo này là <strong>investment evidence pack</strong> phục vụ nghiên cứu cá nhân, <strong>không phải khuyến nghị mua/bán</strong>,
+      Báo cáo này là <strong>hồ sơ phân tích</strong> phục vụ nghiên cứu cá nhân, <strong>không phải khuyến nghị mua/bán</strong>,
       không phải lệnh giao dịch, không phải tư vấn tài chính cá nhân.
       Quyết định đầu tư là của bạn. Cổ phiếu có thể giảm 30–50%.
     </div>
-    <p><strong>{{COMPANY_NAME}} ({{EXCHANGE}}: {{TICKER}})</strong> · Investment Evidence Pack · dữ liệu tính đến {{PRICE_DATE}} · không khuyến nghị mua/bán</p>
-    <p>Built với equity-research-vn skill · skeleton template + {{TICKER}} JSON data · Chart.js 4.4.1</p>
-    <p class="faint">Nguồn: {{SOURCES_SUMMARY}} · {{CITATION_COUNT}} citations</p>
+    <p><strong>{{COMPANY_NAME}} ({{EXCHANGE}}: {{TICKER}})</strong> · Hồ sơ phân tích · dữ liệu tính đến {{PRICE_DATE}} · không khuyến nghị mua/bán</p>
+    <p class="faint">Báo cáo nghiên cứu · Không phải khuyến nghị mua/bán.</p>
   </div>
 </footer>
 
 <script>
 
-/* ============ DATA (KDH — VND, tỷ VND unless noted) ============ */
-/* ============ DATA (per-ticker chart/financial data — replace whole block) ============ */
+/* ============ Dữ liệu biểu đồ ============ */
 {{CHART_DATA_JS}}
 
 
 /* ============ Chart defaults ============ */
 Chart.defaults.color = '#8b949e';
-Chart.defaults.font.family = "'Inter', sans-serif";
+Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
 Chart.defaults.borderColor = 'rgba(255,255,255,0.05)';
 Chart.defaults.font.size = 11;
 
@@ -705,6 +584,9 @@ function grad(ctx, c1, c2){
 }
 
 const AMBER='#f5a623', BLUE='#4a9eff', GREEN='#3fb950', RED='#f85149', PURPLE='#a78bfa', GRID='rgba(255,255,255,0.05)';
+const UI_FONT = getComputedStyle(document.body).fontFamily;
+const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const SCROLL_BEHAVIOR = REDUCED_MOTION ? 'auto' : 'smooth';
 const baseScales = {
   x: { grid:{display:false}, ticks:{font:{size:10}} },
   y: { grid:{color:GRID}, ticks:{font:{size:10}} }
@@ -733,7 +615,7 @@ const baseOpts = (extra) => ({
 document.addEventListener('DOMContentLoaded', function(){
   const $ = (id) => document.getElementById(id);
 
-  // --- Chart 1: Revenue + Net Income (10Y) ---
+  // --- Chart 1: Doanh thu + lợi nhuận 5 năm ---
   new Chart($('chartHistRev'), {
     type:'bar',
     data:{ labels: DATA.years, datasets:[
@@ -771,8 +653,25 @@ document.addEventListener('DOMContentLoaded', function(){
     })
   });
 
+  // --- Chất lượng lợi nhuận: CFO so với LNST ---
+  if ($('chartEQ')) new Chart($('chartEQ'), {
+    type:'bar',
+    data:{ labels: DATA.years, datasets:[
+      { label:'CFO (tỷ VND)', data:DATA.cfo,
+        backgroundColor:'rgba(63,185,80,0.68)', borderRadius:5, order:2 },
+      { label:'LNST (tỷ VND)', data:DATA.netIncome, type:'line',
+        borderColor:AMBER, backgroundColor:AMBER, tension:0.35,
+        pointRadius:4, pointBackgroundColor:'#0f1419', pointBorderWidth:2, order:1 }
+    ]},
+    options:baseOpts({
+      scales:{ x:baseScales.x, y:{...baseScales.y, title:{display:true,text:'tỷ VND',font:{size:10},color:'#565f6b'}} },
+      plugins:{legend:{position:'top',align:'end',labels:{usePointStyle:true,boxWidth:8}}}
+    })
+  });
+
   // --- Chart 3: Segment mix (doughnut) ---
-  if (DATA.segMix && DATA.segMix.length) {
+  if ($('chartSegMix') && DATA.segMix && Array.isArray(DATA.segMix.labels) && DATA.segMix.labels.length &&
+      Array.isArray(DATA.segMix.values) && DATA.segMix.values.length === DATA.segMix.labels.length) {
   new Chart($('chartSegMix'), {
     type:'doughnut',
     data:{ labels: DATA.segMix.labels, datasets:[{
@@ -790,25 +689,11 @@ document.addEventListener('DOMContentLoaded', function(){
   });
   }
 
-  // --- Chart 4: Land bank / inventory accumulation (tỷ VND) ---
-  if ($('chartThesisRPO')) new Chart($('chartThesisRPO'), {
-    type:'bar',
-    data:{ labels: DATA.years, datasets:[{
-      label:'Tồn kho (tỷ VND)', data: DATA.inventory,
-      backgroundColor:(c)=>grad(c,'rgba(245,166,35,0.85)','rgba(245,166,35,0.25)'),
-      borderRadius:6
-    }]},
-    options: baseOpts({
-      scales:{ x: baseScales.x, y:{ ...baseScales.y, ticks:{callback:(v)=>v+' tỷ'}} },
-      plugins:{ legend:{display:false}, tooltip:{callbacks:{label:(c)=>` Tồn kho: ${c.parsed} tỷ VND`}} }
-    })
-  });
-
-  // --- Chart 5: Forward project pipeline value (tỷ VND, MEDQ estimate) ---
+  // --- Capex thực tế 5 năm ---
   if ($('chartThesisCapex')) new Chart($('chartThesisCapex'), {
     type:'bar',
     data:{ labels:{{THESIS_CAPEX_LABELS}}, datasets:[{
-      label:'Giá trị dự án (tỷ VND)', data:{{THESIS_CAPEX_DATA}},
+      label:'Capex thực tế (tỷ VND)', data:{{THESIS_CAPEX_DATA}},
       backgroundColor:(c)=>{
         const i = c.dataIndex;
         const cols=['rgba(74,158,255,0.7)','rgba(245,166,35,0.8)', 'rgba(167,139,250,0.7)', 'rgba(248,81,73,0.8)', 'rgba(63,185,80,0.7)'];
@@ -817,7 +702,7 @@ document.addEventListener('DOMContentLoaded', function(){
     }]},
     options: baseOpts({
       scales:{ x: baseScales.x, y:{ ...baseScales.y, ticks:{callback:(v)=>v+' tỷ'}} },
-      plugins:{ legend:{display:false}, tooltip:{callbacks:{label:(c)=>` Giá trị: ${c.parsed} tỷ VND`}} }
+      plugins:{ legend:{display:false}, tooltip:{callbacks:{label:(c)=>` Capex: ${c.parsed} tỷ VND`}} }
     })
   });
 
@@ -848,43 +733,49 @@ document.addEventListener('DOMContentLoaded', function(){
     })
   });
 
-  // --- Chart 7: Debt vs Cash (10Y) ---
-  new Chart($('chartBSDt'), {
+  // --- Cấu trúc nguồn vốn 5 năm ---
+  new Chart($('chartCapitalStructure'), {
     type:'bar',
     data:{ labels: DATA.years, datasets:[
-      { label:'Tồn kho (tỷ VND)', data: DATA.inventory,
-        backgroundColor:(c)=>grad(c,'rgba(248,81,73,0.85)','rgba(248,81,73,0.3)'), borderRadius:5, yAxisID:'y', order:2 },
-      { label:'Vốn chủ sở hữu (tỷ VND)', data: DATA.equity, type:'line',
-        borderColor: GREEN, backgroundColor: GREEN, tension:0.35, pointRadius:4,
-        pointBackgroundColor:'#0f1419', pointBorderWidth:2, yAxisID:'y', order:1, borderWidth:2.5 }
+      { label:'Nợ phải trả (tỷ VND)', data:DATA.liabilities,
+        backgroundColor:'rgba(248,81,73,0.66)', borderRadius:4, stack:'capital' },
+      { label:'Vốn chủ sở hữu (tỷ VND)', data:DATA.equity,
+        backgroundColor:'rgba(63,185,80,0.68)', borderRadius:4, stack:'capital' }
     ]},
     options: baseOpts({
-      scales:{ x: baseScales.x, y:{ ...baseScales.y, title:{display:true, text:'tỷ VND', font:{size:10}, color:'#565f6b'}} }
+      scales:{ x:{...baseScales.x,stacked:true}, y:{...baseScales.y,stacked:true,title:{display:true,text:'tỷ VND',font:{size:10},color:'#565f6b'}} }
     })
   });
 
-  // --- Chart 8: Dividend + Buyback ---
-  new Chart($('chartBSDt2') || $('chartReturns'), {
-    type:'bar',
+  // --- EPS và ROE 5 năm: hai đơn vị, hai trục ---
+  new Chart($('chartEpsRoe'), {
+    type:'line',
     data:{ labels: DATA.years, datasets:[
-      { label:'EPS (VND)', data: DATA.eps, backgroundColor:'rgba(63,185,80,0.7)', borderRadius:4, yAxisID:'y' },
-      { label:'ROE (%)', data: DATA.roe, type:'line', borderColor: BLUE, backgroundColor: BLUE, tension:0.3, pointRadius:4, yAxisID:'y1', borderWidth:2 }
+      { label:'EPS (VND/cp)', data:DATA.eps, borderColor:AMBER, backgroundColor:AMBER,
+        tension:0.3, pointRadius:4, yAxisID:'y', borderWidth:2 },
+      { label:'ROE (%)', data:DATA.roe, borderColor:BLUE, backgroundColor:BLUE,
+        tension:0.3, pointRadius:4, yAxisID:'y1', borderWidth:2 }
     ]},
     options: baseOpts({
-      scales:{ x: baseScales.x, y:{ ...baseScales.y, stacked:true, title:{display:true, text:'tỷ VND', font:{size:10}, color:'#565f6b'}} }
+      scales:{
+        x:baseScales.x,
+        y:{...baseScales.y,position:'left',title:{display:true,text:'EPS (VND/cp)',font:{size:10},color:'#565f6b'}},
+        y1:{position:'right',grid:{display:false},title:{display:true,text:'ROE (%)',font:{size:10},color:'#565f6b'}}
+      }
     })
   });
 
   // --- Chart 9: Peer scatter ---
+  const peerPoints = (DATA.peers && (DATA.peers.data || DATA.peers)) || [];
   const peers = {
     datasets:[{
       label:(DATA.peerLabel || 'Peer VN (P/B vs tăng trưởng, bubble=vốn hóa)'),
-      data: DATA.peers.data || DATA.peers,
+      data: peerPoints,
       backgroundColor:(ctx)=>{ const d=ctx.raw; return d.own ? AMBER : BLUE; },
       borderColor:'#0f1419', borderWidth:1.5
     }]
   };
-  new Chart($('chartPeerScatter'), {
+  if ($('chartPeerScatter') && peerPoints.length >= 2) new Chart($('chartPeerScatter'), {
     type:'bubble',
     data: peers,
     options: baseOpts({
@@ -895,7 +786,7 @@ document.addEventListener('DOMContentLoaded', function(){
       plugins:{
         legend:{display:false},
         tooltip:{callbacks:{label:(c)=>{
-          const d=c.raw; return ` ${d.label}: P/B ${d.x}×, tăng trưởng ${d.y}%`;
+          const d=c.raw; return ` ${d.label}: P/B ${d.x}×, P/E ${d.y}×`;
         }}},
         datalabels:false
       }
@@ -907,7 +798,7 @@ document.addEventListener('DOMContentLoaded', function(){
         const ds = chart.data.datasets[0].data;
         const meta = chart.getDatasetMeta(0);
         ctx.save();
-        ctx.font = 'bold 11px Inter';
+        ctx.font = `700 11px ${UI_FONT}`;
         ctx.fillStyle = '#e6edf3';
         ctx.textAlign='center';
         ds.forEach((d,i)=>{
@@ -921,11 +812,16 @@ document.addEventListener('DOMContentLoaded', function(){
   });
 
   // --- Chart 10: Technical — Price + MA (weekly) ---
-  const techWeeks = DATA.techWeeks;
-  const techPrice = DATA.techPrice;
-  const techMA10  = DATA.techMA10;
-  const techMA20  = DATA.techMA20;
-  const techMA50  = DATA.techMA50;
+  const techWeeks = DATA.techWeeks || [];
+  const techPrice = DATA.techPrice || [];
+  const movingAverage = (values, windowSize) => values.map((_, index) => {
+    const slice = values.slice(Math.max(0, index - windowSize + 1), index + 1)
+      .filter((value) => Number.isFinite(Number(value)));
+    return slice.length ? slice.reduce((sum, value) => sum + Number(value), 0) / slice.length : null;
+  });
+  const techMA10 = DATA.techMA10Series || movingAverage(techPrice, 10);
+  const techMA20 = DATA.techMA20Series || DATA.techMA20val || movingAverage(techPrice, 20);
+  const techMA50 = DATA.techMA50Series || DATA.techMA50val || movingAverage(techPrice, 50);
   new Chart($('chartTechPrice'), {
     type:'line',
     data:{ labels: techWeeks, datasets:[
@@ -936,7 +832,7 @@ document.addEventListener('DOMContentLoaded', function(){
     ]},
     options: baseOpts({
       scales:{ x: baseScales.x, y:{ ...baseScales.y, title:{display:true, text:'VND / cổ phiếu', font:{size:10}, color:'#565f6b'} } },
-      plugins:{ legend:{labels:{usePointStyle:true, boxWidth:8}}, annotation:{ annotations:{ support:{type:'line', yMin:DATA.tech52wLow, yMax:DATA.tech52wLow, borderColor:GREEN, borderDash:[6,4], borderWidth:1, label:{content:('Hỗ trợ ~'+DATA.tech52wLow.toLocaleString()+' VND (52W low)'), display:true, position:'start', backgroundColor:'rgba(63,185,80,0.85)', font:{size:9,weight:'bold'}, color:'#0f1419'}}, resist:{type:'line', yMin:DATA.techMA50val, yMax:DATA.techMA50val, borderColor:RED, borderDash:[6,4], borderWidth:1, label:{content:('Kháng cự ~'+DATA.techMA50val.toLocaleString()+' VND (MA50)'), display:true, position:'end', backgroundColor:'rgba(248,81,73,0.85)', font:{size:9,weight:'bold'}, color:'#fff'}} } } }
+      plugins:{ legend:{labels:{usePointStyle:true, boxWidth:8}}, annotation:{ annotations:{ support:{type:'line', yMin:DATA.tech52wLow, yMax:DATA.tech52wLow, borderColor:GREEN, borderDash:[6,4], borderWidth:1, label:{content:('Hỗ trợ ~'+DATA.tech52wLow.toLocaleString()+' VND (52W low)'), display:true, position:'start', backgroundColor:'rgba(63,185,80,0.85)', font:{size:9,weight:'bold'}, color:'#0f1419'}}, resist:{type:'line', yMin:DATA.techMA50, yMax:DATA.techMA50, borderColor:RED, borderDash:[6,4], borderWidth:1, label:{content:('MA50 ~'+DATA.techMA50.toLocaleString()+' VND'), display:true, position:'end', backgroundColor:'rgba(248,81,73,0.85)', font:{size:9,weight:'bold'}, color:'#fff'}} } } }
     })
   });
 
@@ -957,7 +853,7 @@ document.addEventListener('DOMContentLoaded', function(){
     })
   });
 
-  // --- Chart 12: Drawdown profile (2Y daily underwater curve, monthly resample) ---
+  // --- Drawdown hàng tháng trong 12 tháng gần nhất ---
   const ddMonths = DATA.ddMonths;
   const ddValues = DATA.ddValues;
   new Chart($('chartProfileDD'), {
@@ -978,15 +874,29 @@ document.addEventListener('DOMContentLoaded', function(){
   new Chart($('chartProfileDist'), {
     type:'bar',
     data:{ labels: distBins, datasets:[{
-      label:'Số ngày (2 năm)', data: distCounts,
+      label:'Số tuần (52 tuần)', data: distCounts,
       backgroundColor: (c)=>{
         const i=c.dataIndex;
         return i<2 ? 'rgba(248,81,73,0.7)' : (i===2 ? '#565f6b' : 'rgba(63,185,80,0.7)');
       }, borderRadius:4
     }]},
     options: baseOpts({
-      scales:{ x: baseScales.x, y:{ ...baseScales.y, title:{display:true, text:'số ngày', font:{size:10}, color:'#565f6b'} } },
+      scales:{ x: baseScales.x, y:{ ...baseScales.y, title:{display:true, text:'số tuần', font:{size:10}, color:'#565f6b'} } },
       plugins:{ legend:{display:false} }
+    })
+  });
+
+  // --- Lợi suất tích lũy 52 tuần ---
+  new Chart($('chartReturns'), {
+    type:'line',
+    data:{ labels:techWeeks, datasets:[{
+      label:'Lợi suất tích lũy (%)', data:DATA.returnIndex,
+      borderColor:GREEN, backgroundColor:'rgba(63,185,80,0.14)', fill:true,
+      tension:0.3, pointRadius:2, borderWidth:2
+    }]},
+    options:baseOpts({
+      scales:{x:baseScales.x,y:{...baseScales.y,title:{display:true,text:'%',font:{size:10},color:'#565f6b'}}},
+      plugins:{legend:{display:false}}
     })
   });
 });
@@ -1022,81 +932,27 @@ document.addEventListener('DOMContentLoaded', function(){
       const linkRect = activeLink.getBoundingClientRect();
       const innerRect = navInner.getBoundingClientRect();
       if (linkRect.right > innerRect.right - 20 || linkRect.left < innerRect.left + 20){
-        navInner.scrollTo({ left: navInner.scrollLeft + (linkRect.left - innerRect.left - 40), behavior:'smooth' });
+        navInner.scrollTo({ left: navInner.scrollLeft + (linkRect.left - innerRect.left - 40), behavior:SCROLL_BEHAVIOR });
       }
     }
   }
   window.addEventListener('scroll', onScroll, {passive:true});
   window.addEventListener('resize', onScroll);
-  // smooth-scroll on click
-  links.forEach(l => {
+  // Cùng một cơ chế cuộn cho thanh điều hướng và mục lục.
+  document.querySelectorAll('a[href^="#sec-"]').forEach(l => {
     l.addEventListener('click', (e)=>{
-      const t = document.getElementById(l.dataset.target);
+      const targetId = l.dataset.target || l.getAttribute('href').slice(1);
+      const t = document.getElementById(targetId);
       if (!t) return;
       e.preventDefault();
       const top = t.getBoundingClientRect().top + window.scrollY - nav.offsetHeight - 8;
-      window.scrollTo({ top, behavior:'smooth' });
+      window.scrollTo({ top, behavior:SCROLL_BEHAVIOR });
     });
   });
-  backTop.addEventListener('click', ()=> window.scrollTo({top:0, behavior:'smooth'}));
+  backTop.addEventListener('click', ()=> window.scrollTo({top:0, behavior:SCROLL_BEHAVIOR}));
   onScroll();
 })();
 
 </script>
 </body>
-
-<!--
-=== TOKENS TO FILL (complete list) ===
-Template: dashboard_template.html — 22 sections, Chart.js 4.4.1 framework sẵn sàng.
-Agent chỉ cần fill các token dưới đây. GIỮ NGUYÊN: CSS, <section> ids, canvas ids, nav links, Chart.js setup.
-
---- Identity / meta ---
-{{TICKER}} — mã cổ phiếu (vd KDH, HPG, FPT)
-{{COMPANY_NAME}} — tên công ty tiếng Việt (vd Nhà Khang Điền)
-{{EXCHANGE}} — sàn giao dịch (vd HOSE, HNX, UPCOM)
-{{PRICE_DATE}} — ngày giá đóng cửa gần nhất (vd 08/07/2026)
-{{CAPITAL_LENS_AMOUNT}} — số vốn cho góc nhìn khoản đầu tư (vd 800 triệu VND)
-{{SOURCES_SUMMARY}} — tóm tắt nguồn dữ liệu (vd vnstock (VCI), BCTC kiểm toán, báo chí...)
-{{CITATION_COUNT}} — số citation trong báo cáo (vd 16)
-
---- Section body HTML (mỗi token = toàn bộ nội dung HTML bên trong section, giữa section-title và </section>) ---
-{{SEC_HERO_HTML}} — HTML body cho section hero + KPI strip
-{{SEC_EXEC_HTML}} — HTML body cho section executive summary (4 callout + plain)
-{{SEC_BIZ_HTML}} — HTML body cho section business 101
-{{SEC_INDUSTRY_HTML}} — HTML body cho section industry position / value chain
-{{SEC_HISTORY_HTML}} — HTML body cho section financial history table + analysis
-{{SEC_SEGMENT_HTML}} — HTML body cho section segment analysis
-{{SEC_THESIS_HTML}} — HTML body cho section investment thesis + đúng/sai + KPI watchlist
-{{SEC_VALUATION_HTML}} — HTML body cho section valuation P/E P/B + NAV
-{{SEC_PEER_HTML}} — HTML body cho section peer comparison
-{{SEC_BS_HTML}} — HTML body cho section balance sheet & FCF
-{{SEC_RISK_HTML}} — HTML body cho section risk matrix table
-{{SEC_CAPITAL_LENS_HTML}} — HTML body cho section capital lens (800tr) lump sum/DCA/drawdown/checklist
-{{SEC_SCENARIO_HTML}} — HTML body cho section scenario bull/base/bear
-{{SEC_CHECKLIST_HTML}} — HTML body cho section final investment checklist 5 nhóm
-{{SEC_INSIGHT_1_HTML}} — HTML body cho section special insight 1 full body
-{{SEC_INSIGHT_2_HTML}} — HTML body cho section special insight 2 full body
-{{SEC_INSIGHT_3_HTML}} — HTML body cho section special insight 3 full body
-{{SEC_TECH_HTML}} — HTML body cho section technical ACTIVE (score/MA/RSI/MACD/pattern)
-{{SEC_TECH_PROFILE_HTML}} — HTML body cho section technical PROFILE (return/drawdown/tail/non-advice)
-{{SEC_ANALYST_HTML}} — HTML body cho section analyst synthesis (consensus/target/bull-bear)
-{{SEC_GLOSSARY_HTML}} — HTML body cho section glossary
-{{SEC_SOURCE_HTML}} — HTML body cho section source appendix + data quality matrix + refs
-
---- Insights (subtitle + TOC label) ---
-{{INSIGHT_1_SUBTITLE}} — tiêu đề h2 insight 1 (đặc thù ticker)
-{{INSIGHT_2_SUBTITLE}} — tiêu đề h2 insight 2 (đặc thù ticker)
-{{INSIGHT_3_SUBTITLE}} — tiêu đề h2 insight 3 (đặc thù ticker)
-{{INSIGHT_1_SHORT_LABEL}} — nhãn TOC ngắn cho insight 1 (vd "Tồn kho")
-{{INSIGHT_2_SHORT_LABEL}} — nhãn TOC ngắn cho insight 2 (vd "CFO âm")
-{{INSIGHT_3_SHORT_LABEL}} — nhãn TOC ngắn cho insight 3 (vd "Mả Lặng")
-
---- Chart data (JS) ---
-{{CHART_DATA_JS}} — block JS "const DATA = {...}" chứa mọi mảng cho Chart.js (years, revenue, netIncome, grossProfit, inventory, cfo, equity, totalAssets, eps, roe, peHist, pbHist, bvps, peers, techWeeks/Price/MA10/MA20/MA50/RSI, ddMonths/Values, distBins/Counts, segMix, invGrowth) — đơn vị tỷ VND / VND / %
-{{THESIS_CAPEX_LABELS}} — JS array nhãn cho chart Thesis Capex (vd ["FY25 thực tế","FY26 dự phóng","FY27 dự phóng","Dự án lớn (toàn dự án)"])
-{{THESIS_CAPEX_DATA}} — JS array số liệu cho chart Thesis Capex (vd [4651, 7000, 9000, 16369])
-
-Lưu ý: {{CHART_DATA_JS}} là biến của const DATA object — tất cả canvas đều đọc từ DATA.years/revenue/... .
-Đừng hardcode số liệu trong Chart setup; tham chiếu DATA.xxx thay thế.
--->
 </html>

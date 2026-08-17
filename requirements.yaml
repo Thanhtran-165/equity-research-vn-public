@@ -19,13 +19,13 @@ requirements:
     expect_min: 20
   fix_hint: 'Kiểm tra source-pack và cài phiên bản vnstock Sponsor hiện hành theo README; không downgrade để né schema mới.'
 - id: REQ-003
-  text: Audit split (Bẫy 5B) trước khi tính EPS/PE/PB. Back-calc CP = LNST/EPS từng năm.
+  text: Trước khi tính P/E và P/B, phải đối chiếu EPS lịch sử với lợi nhuận và số cổ phiếu; không ghi đè số đã công bố.
   type: mandatory
   priority: high
   failure_mode: FM-08
   verification:
     method: artifact_check
-    check: Report phải mention 'split-adjusted' hoặc 'Bẫy 5B' hoặc 'cross-check EPS'
+    check: Report phải giải thích EPS lịch sử được giữ theo số công bố và được đối chiếu với lợi nhuận, số cổ phiếu.
 - id: REQ-004
   text: Data giá THẬT từ vnstock. KHÔNG mô phỏng/ngụy tạo data giá.
   type: mandatory
@@ -35,15 +35,15 @@ requirements:
     method: artifact_check
     check: Chart data values phải khớp vnstock (không placeholder, không Oracle/HPG)
 - id: REQ-005
-  text: Technical mode ACTIVE (weekly 52 tuần, Tech Score -6→+6, Verdict, MA/RSI/MACD).
+  text: Phân tích kỹ thuật 52 tuần phải có điểm -6→+6, trạng thái tổng hợp và MA/RSI/MACD.
   type: mandatory
   priority: high
   failure_mode: FM-01
   verification:
     method: artifact_check
-    check: Report phải có sec-tech với Tech Score số + Verdict (STRONG SELL→STRONG BUY)
+    check: Report phải có sec-tech với điểm kỹ thuật dạng số và trạng thái tiếng Việt.
 - id: REQ-006
-  text: Technical mode PROFILE (daily ~2 năm, 15 block, archetype, NON-ADVICE).
+  text: Hồ sơ biến động giá phải mô tả trung tính dữ liệu khoảng 2 năm và không đưa khuyến nghị.
   type: mandatory
   priority: high
   failure_mode: FM-01
@@ -67,7 +67,7 @@ requirements:
     method: artifact_check
     check: Report phải có sentiment score (số) + ít nhất 2 category
 - id: REQ-009
-  text: Dashboard copy từ dashboard_template.html (22 sections canonical). KHÔNG tự chế section ids.
+  text: Dashboard copy từ dashboard_template.html (23 sections canonical). KHÔNG tự chế section ids.
   type: mandatory
   priority: critical
   failure_mode: FM-06
@@ -94,6 +94,7 @@ requirements:
     - sec-insight-3
     - sec-tech
     - sec-tech-profile
+    - sec-news
     - sec-analyst
     - sec-glossary
     - sec-source
@@ -322,7 +323,7 @@ requirements:
   verification:
     method: chart_runtime_check
 - id: REQ-029
-  text: 'Source citation: mọi số liệu định lượng trong narrative (revenue, profit, %, multiples, drawdown) phải có nguồn cite. Key metrics (PE, PB, CAGR) cite source ít nhất 1 lần khi xuất hiện đầu. KHÔNG có số liệu "trôi nổi" không nguồn — nếu không có source, phải ghi "ước tính" hoặc bỏ. (Lesson Learned #7-10: agent đưa %, multiples, drawdown không cite nguồn.)'
+  text: 'Provenance tập trung: số liệu trong narrative phải truy vết được qua verified-dashboard-data.json, financials.json và phụ lục nguồn. Không rải nhãn nguồn/controller trong prose công khai. Các oracle số liệu chuyên biệt vẫn phải fail-closed.'
   type: mandatory
   priority: high
   failure_mode: FM-05
@@ -330,10 +331,10 @@ requirements:
   verification:
     method: source_citation_check
     rules:
-    - 'Mỗi số VND/ty/%/x trong narrative: check có source keyword gần (BCTC, vnstock, data, ref-) HOẶC marker "ước tính/giả định"'
-    - 'Key metrics (PE, PB, CAGR, ROE): cite source ít nhất 1 lần trong section đầu xuất hiện'
-    - 'Drawdown/risk claims: phải cite data thật (max drawdown từ price history) HOẶC ghi "ước tính dựa trên"'
-    - 'Percentages >0 và <100: phải có context/source, KHÔNG trôi nổi'
+    - 'verified-dashboard-data.json phải có _provenance.source và _provenance.built_at'
+    - 'data/financials.json phải tồn tại để các oracle định lượng đối chiếu'
+    - 'sec-source phải có ít nhất 8 reference entries'
+    - 'Prose trước sec-source không được lộ nhãn sponsor/vnstock Quote/evidence pack hoặc cụm theo nguồn lặp lại'
     exempt:
     - Số trong CSS/style (width, height, font-size)
     - Số trong timestamp/date

@@ -18,6 +18,7 @@ Usage:
 Exit code: 0 = all pass, 1 = any fail
 """
 import json, sys, os, re, shlex, subprocess, yaml, datetime, hashlib
+import html as html_lib
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if SCRIPT_DIR not in sys.path:
@@ -325,7 +326,8 @@ def verify_artifact_check(req, html):
     check = req["verification"].get("check", "")
     text = extract_all_text(html) if html else ""
 
-    if "split-adjusted" in check.lower() or "bẫy 5b" in check.lower():
+    if ("split-adjusted" in check.lower() or "bẫy 5b" in check.lower()
+            or "eps lịch sử" in check.lower()):
         # G13 (review V4 Flash): keyword-check "report chứa chữ split-adjusted" lách
         # được bằng cách thả chữ. Verify từ task-state phase1: split_audit phải log
         # kết quả audit (cp_consistent) — report mention chỉ là điều kiện phụ.
@@ -334,7 +336,11 @@ def verify_artifact_check(req, html):
         if ts:
             p1 = (ts.get("phases", {}).get("phase1_data", {}) or {}).get("result") or {}
             audit = p1.get("split_audit") or ts.get("split_audit")
-        report_mentions = any(w in text.lower() for w in ["split-adjusted", "bẫy 5b", "cross-check eps", "audit split"])
+        report_mentions = any(w in text.lower() for w in [
+            "split-adjusted", "bẫy 5b", "cross-check eps", "audit split",
+            "eps lịch sử được giữ theo số đã công bố",
+            "đối chiếu với lợi nhuận và số cổ phiếu",
+        ])
         if isinstance(audit, dict):
             cp_ok = audit.get("cp_consistent") in (True, "true", "True")
             if not cp_ok:
@@ -371,7 +377,7 @@ def verify_artifact_check(req, html):
                                "error": f"REQ-003: {cp_warn} — nếu là split phải restate EPS lịch sử; nếu là dilution ghi rõ cp_variation_cause trong task-state"}
             if not report_mentions:
                 return False, {"found": False, "split_audit": audit,
-                               "error": "split_audit OK nhưng report không mention 'split-adjusted/Bẫy 5B/cross-check EPS'"}
+                               "error": "split_audit OK nhưng report không giải thích cách giữ và đối chiếu EPS lịch sử"}
             return True, {"found": True, "split_audit": audit, "audit_verified_from_task_state": True}
         if audit:
             return False, {"found": report_mentions, "split_audit": audit,
@@ -413,9 +419,13 @@ def verify_artifact_check(req, html):
     if "non_advice" in check.lower() or "neutral_descriptive" in check.lower():
         return verify_non_advice_check(req, html)
 
-    if "tech score" in check.lower() or "verdict" in check.lower():
+    if "tech score" in check.lower() or "verdict" in check.lower() or "điểm kỹ thuật" in check.lower():
         sec = extract_section_text(html, "sec-tech")
-        passed = bool(re.search(r"-?[0-9]\s*/\s*6|STRONG (SELL|BUY)|SELL|BUY|NEUTRAL", sec))
+        passed = bool(re.search(
+            r"-?[0-9]\s*/\s*6|(?:điểm\s+kỹ\s+thuật)[^\d-]{0,20}[-+]?\d+|"
+            r"STRONG (SELL|BUY)|SELL|BUY|NEUTRAL",
+            sec, re.I,
+        ))
         return passed, {"has_tech_score": passed, "section_length": len(sec)}
 
     if "sec-tech-profile" in check.lower() or "non-advice" in check.lower():
@@ -424,8 +434,26 @@ def verify_artifact_check(req, html):
         return passed, {"section_length": len(sec)}
 
     if "sentiment" in check.lower():
-        passed = bool(re.search(r"sentiment|tích cực|tiêu cực|trung tính", text.lower()))
-        return passed, {"has_sentiment": passed}
+        news_section = extract_section_text(html, "sec-news")
+        digest = _load_json_rel("news_digest.json") or {}
+        articles = digest.get("articles") or []
+        has_sentiment = bool(re.search(r"sắc thái|sentiment|tích cực|tiêu cực|trung tính", news_section.lower()))
+        if articles:
+            visible_article = any(
+                str(article.get("title") or "").strip()[:30].lower() in news_section.lower()
+                for article in articles if str(article.get("title") or "").strip()
+            )
+            passed = len(news_section) > 80 and has_sentiment and visible_article
+        else:
+            visible_article = None
+            passed = len(news_section) > 40 and bool(re.search(
+                r"không có (?:bài|tin) mới|chưa có dữ liệu tin tức", news_section, re.I
+            ))
+        return passed, {"has_sentiment": has_sentiment,
+                        "news_section_length": len(news_section),
+                        "source_articles": len(articles),
+                        "visible_article": visible_article,
+                        "note": "REQ-008 kiểm cả news_digest và bề mặt HTML sec-news"}
 
     if "callout" in check.lower() or "limitation" in check.lower() or "honest" in check.lower():
         passed = any(w in text.lower() for w in ["ước tính", "limitation", "stale", "honest", "data limitation"])
@@ -1149,104 +1177,48 @@ def _check_claim_citation(text, claim_patterns, source_kws, window=150, uncertai
 
 
 def verify_source_citation(req, html):
-    """REQ-029: Source citation check — mọi số liệu trong narrative phải có nguồn.
+    """REQ-029: provenance tập trung, không rải nhãn nguồn trong prose.
 
-    Quét narrative (text content, không CSS/JS) tìm số liệu định lượng
-    không có source keyword gần đó. Key metrics phải cite ít nhất 1 lần.
-
-    Lesson Learned #7-10: agent đưa %, multiples, drawdown không cite nguồn.
+    Số liệu đã có oracle riêng (REQ-022/026/033/059/060/062/076). REQ-029
+    chịu trách nhiệm kiểm đường truy vết: sidecar có provenance, phụ lục nguồn
+    hiện diện, và prose công khai không lộ ngôn ngữ controller.
     """
     if not html:
         return False, {"error": "no html"}
-
-    # Extract text content only (strip tags, CSS, JS)
-    # Remove <style> and <script> blocks
-    text_html = re.sub(r'<style[^>]*>.*?</style>', '', html, flags=re.DOTALL)
-    text_html = re.sub(r'<script[^>]*>.*?</script>', '', text_html, flags=re.DOTALL)
-    text = re.sub(r'<[^>]+>', ' ', text_html)
-    text = re.sub(r'\s+', ' ', text).strip()
-
-    source_keywords = ['bctc', 'theo', 'nguồn', 'source', 'ref-', 'vnstock', 'data',
-                       'ước tính', 'giả định', 'khoảng', 'tiếp cận', 'estimate',
-                       'tính từ', 'recompute', 'sponsor', 'kiểm toán', 'công bố']
-    uncertainty_markers = ['ước tính', 'giả định', 'khoảng', 'có thể', 'xấp xỉ',
-                           'tiếp cận', 'estimate', 'approximate']
-
-    # Find all quantitative claims: numbers with units
-    # Pattern: digits + (tỷ/nghìn/%/×/x/VND)
-    number_pattern = re.compile(
-        r'(\d[\d.,]*)\s*(tỷ\s*(?:vnd|đồng)?|nghìn\s*tỷ|ngàn\s*tỷ|%|phần\s*trăm|×|x\b|lần|vnd)',
-        re.IGNORECASE
-    )
-
     issues = []
-    checked = 0
-    unsourced = 0
+    source_text = extract_section_text(html, "sec-source")
+    refs = re.findall(r'id="ref-\d+"', html)
+    if not source_text or len(refs) < 8:
+        issues.append(f"phụ lục nguồn thiếu hoặc không đủ: {len(refs)} refs")
 
-    for m in number_pattern.finditer(text):
-        val_str = m.group(1)
-        unit = m.group(2).lower().strip()
+    contract = _load_json_rel("verified-dashboard-data.json")
+    provenance = contract.get("_provenance") if isinstance(contract, dict) else None
+    if not isinstance(provenance, dict) or not provenance.get("source") or not provenance.get("built_at"):
+        issues.append("verified-dashboard-data.json thiếu _provenance.source/built_at")
+    if _load_json_rel("data/financials.json") is None:
+        issues.append("thiếu data/financials.json cho oracle số liệu")
 
-        # Skip if value is 0 or clearly not a data point
-        try:
-            val = float(val_str.replace(',', '.'))
-        except ValueError:
-            continue
-        if val == 0 or val == 100:
-            continue
+    reader = html.split('<section id="sec-source"', 1)[0]
+    reader = re.sub(r'<style[^>]*>.*?</style>|<script[^>]*>.*?</script>', '', reader,
+                    flags=re.DOTALL | re.IGNORECASE)
+    reader_text = re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', ' ', reader)).strip()
+    forbidden = [
+        "sponsor vnstock_data", "vnstock quote", "evidence pack",
+        "theo bctc kiểm toán", "theo bclctt", "theo peer vnstock",
+        "theo hồ sơ công ty", "theo bối cảnh ngành",
+    ]
+    leaked = [label for label in forbidden if label in reader_text.lower()]
+    if leaked:
+        issues.append(f"prose còn lộ nhãn nguồn/controller: {leaked}")
 
-        checked += 1
-        # Context window: 200 chars before and after
-        start = max(0, m.start() - 200)
-        end = min(len(text), m.end() + 200)
-        context = text[start:end].lower()
-
-        has_source = any(kw in context for kw in source_keywords)
-        has_uncertainty = any(kw in context for kw in uncertainty_markers)
-
-        if not has_source and not has_uncertainty:
-            unsourced += 1
-            snippet = text[max(0, m.start()-40):m.end()+40].strip()
-            issues.append(f'"{val_str} {unit}" không có source gần — ...{snippet}...')
-
-    # Key metrics must have at least 1 DIRECT source citation (V3: not just uncertainty)
-    # FIX-3b (review V4 Pro M4): 'data'/'theo' là từ generic xuất hiện khắp narrative
-    # ("không có data", "theo đánh giá"...) → trước đây key metric vẫn PASS dù không
-    # có nguồn thật. Key metrics giờ yêu cầu NAMED source: tên nguồn cụ thể.
-    key_metrics = ['P/E', 'P/B', 'CAGR', 'ROE', 'ROA', 'EPS']
-    direct_source_kws = ['bctc', 'vnstock', 'ref-', 'sponsor', 'kiểm toán', 'công bố',
-                         'hose', 'filings', 'báo cáo tài chính', 'cafef', 'vietstock',
-                         'finance', 'api']
-    key_metric_issues = []
-    for km in key_metrics:
-        if km.lower() in text.lower():
-            # Find first occurrence
-            idx = text.lower().find(km.lower())
-            # FIX-3b (review V4 Pro M4): window 300 quá rộng → source của metric
-            # KHÁC ("theo BCTC" của EPS) nằm trong window → P/E "mượn nguồn".
-            # Giới hạn: source phải nằm trong CÙNG CÂU chứa metric (đến dấu câu,
-            # tối đa 120 chars) — "P/E 9.3x, P/B 0.85x (theo vnstock)" hợp lệ,
-            # "P/E 9.3x (ước tính). EPS... theo BCTC" không hợp lệ.
-            # Lưu ý: dấu chấm trong số thập phân ("9.3x", "2.5%") KHÔNG phải hết câu.
-            end = len(text)
-            seg = text[idx:min(idx + 120, len(text))]
-            m_sep = re.search(r"[.!?;](?!\d)", seg)
-            if m_sep:
-                end = idx + m_sep.start()
-            context = text[idx:end].lower()
-            if not any(kw in context for kw in direct_source_kws):
-                key_metric_issues.append(f'{km}: không có DIRECT source cite trong CÙNG CÂU (V3: uncertainty marker không đủ; FIX-3b: từ generic "data"/"theo" không tính)')
-
-    passed = (unsourced <= 3) and (len(key_metric_issues) == 0)
-    evidence = {
-        "checked_numbers": checked,
-        "unsourced_numbers": unsourced,
-        "threshold": "≤3 unsourced (V3: giảm từ 5 xuống 3)",
-        "unsourced_examples": issues[:5],
-        "key_metrics_without_source": key_metric_issues,
-        "hardening": "V3 tightened tolerance 5→3; key metrics require DIRECT source (not uncertainty marker)",
+    passed = len(issues) == 0
+    return passed, {
+        "refs_total": len(refs),
+        "provenance": provenance,
+        "inline_source_labels": leaked,
+        "issues": issues,
+        "note": "nguồn tập trung ở phụ lục và sidecar; oracle số liệu do các REQ chuyên biệt kiểm",
     }
-    return passed, evidence
 
 
 def verify_price_source(req, html):
@@ -2257,7 +2229,19 @@ def verify_cagr_recompute(req, html):
         return False, {"error": f"financials.json not found: {req['verification'].get('data_file')}"}
 
     text = _narrative_text(html)
-    claims = _find_numeric_claims(text, ["CAGR", "tăng trưởng kép", "compound annual"], window=60)
+    claims = []
+    claim_pattern = re.compile(
+        r"\b(CAGR|tăng\s+trưởng\s+kép|compound\s+annual)"
+        r"([^.!?]{0,100}?)(-?\d+(?:[.,]\d+)?)\s*%",
+        re.IGNORECASE,
+    )
+    for match in claim_pattern.finditer(text):
+        claims.append({
+            "keyword": match.group(1),
+            "value": _normalize_number(match.group(3)),
+            "unit": "%",
+            "context": text[max(0, match.start()-80):match.end()+80].strip()[:240],
+        })
     if not claims:
         # vacuous-pass guard: if "CAGR" mentioned without number → FAIL; absent → PASS note
         if re.search(r"(?:CAGR|tăng trưởng kép)[^\n.]{0,80}(?:N/A|không áp dụng|không tính)", text, re.I):
@@ -2425,7 +2409,7 @@ def verify_claim_basis(req, html):
         for m in re.finditer(pat, text, re.I):
             found += 1
             ctx = text[max(0, m.start()-80):m.end()+200]
-            has_basis = bool(re.search(r"\d[\d.,]*\s*(?:%|tỷ|tỉ|triệu|x)|ref-\d|BCTC|vnstock|data", ctx))
+            has_basis = bool(re.search(r"\d[\d.,]*\s*(?:%|tỷ|tỉ|triệu|VND|x)|ref-\d|BCTC|vnstock|data", ctx, re.I))
             if not has_basis:
                 issues.append(f"claim '{m.group(0)}' không có số liệu/nguồn hỗ trợ trong ±200 chars: ...{ctx.strip()[:120]}...")
 
@@ -2469,7 +2453,18 @@ def verify_industry_claim(req, html):
     for kw in industry_kws:
         for m in re.finditer(kw, text, re.I):
             ctx = text[max(0, m.start()-60):m.end()+200]
-            has_number = bool(re.search(r"\d[\d.,]*\s*%?", ctx))
+            # Chỉ coi là claim định lượng khi số nằm trong cùng câu với từ khóa.
+            # Trước đây số thứ tự của section ở câu kế cận (ví dụ "5 Lịch sử")
+            # làm một mô tả thuần định tính bị gắn nhầm thành claim ngành có số.
+            sentence_start = max(text.rfind(".", 0, m.start()),
+                                 text.rfind("!", 0, m.start()),
+                                 text.rfind("?", 0, m.start())) + 1
+            sentence_ends = [p for p in (text.find(".", m.end()),
+                                         text.find("!", m.end()),
+                                         text.find("?", m.end())) if p >= 0]
+            sentence_end = min(sentence_ends) if sentence_ends else min(len(text), m.end()+200)
+            sentence = text[sentence_start:sentence_end]
+            has_number = bool(re.search(r"\d[\d.,]*\s*%?", sentence))
             if not has_number:
                 continue  # mention without figure — not a claim
             found += 1
@@ -3255,6 +3250,7 @@ def verify_macro_data_citation(req, html):
     if not html:
         return False, {"error": "no html"}
     text = _narrative_text(html)
+    source_text = extract_section_text(html, "sec-source") or ""
 
     macro_kws = [
         r"GDP", r"CPI", r"lạm phát", r"lãi suất", r"FDI", r"tăng trưởng ngành",
@@ -3265,7 +3261,7 @@ def verify_macro_data_citation(req, html):
         r"GSO", r"Tổng cục Thống kê", r"NHNN", r"Ngân hàng Nhà nước",
         r"World Bank", r"IMF", r"ADB", r"FiinPro", r"báo cáo ngành",
         r"CTCK", r"công ty chứng khoán", r"Bộ", r"Tổng cục", r"ref-\d",
-        r"công bố", r"theo", r"ước tính", r"Bloomberg", r"Reuters",
+        r"công bố", r"theo", r"ước tính", r"Dữ liệu ngành", r"Bloomberg", r"Reuters",
     ]
 
     issues = []
@@ -3280,12 +3276,26 @@ def verify_macro_data_citation(req, html):
                 if not (re.search(r"lạm\s*phát|chỉ\s*số\s*giá", local, re.I)
                         or re.search(r"CPI\s*(?:tăng|giảm|ở|=|:)\s*-?\d[\d.,]*\s*%", local, re.I)):
                     continue
-            ctx = text[max(0, m.start() - 60):m.end() + 200]
-            has_number = bool(re.search(r"\d[\d.,]*\s*%?", ctx))
+            # Chỉ ghép con số trong cùng mệnh đề/câu. Cửa sổ ±260 ký tự
+            # cũ từng bắt nhầm "room tín dụng" với Tech Score của câu kế bên.
+            left = max(text.rfind(mark, 0, m.start()) for mark in ".;!?\n")
+            right_candidates = [text.find(mark, m.end()) for mark in ".;!?\n"]
+            right_candidates = [pos for pos in right_candidates if pos >= 0]
+            right = min(right_candidates) if right_candidates else len(text)
+            ctx = text[left + 1:right + 1]
+            has_number = bool(re.search(r"\d[\d.,]*\s*(?:%|\u0111iểm\s*%|tỷ|tỉ|triệu|nghìn)", ctx, re.I))
             if not has_number:
                 continue
             found += 1
             has_source = any(re.search(sk, ctx, re.I) for sk in source_kws)
+            # Thiết kế provenance tập trung: source appendix được chấp nhận thay
+            # cho nhãn "theo ..." lặp cạnh từng con số. Riêng giả định
+            # lạm phát/terminal growth phải có dòng giả định định giá tương ứng.
+            if not has_source and source_text:
+                if re.search(r"lạm phát", m.group(0), re.I):
+                    has_source = bool(re.search(r"Giả định định giá.*tăng trưởng dài hạn", source_text, re.I))
+                else:
+                    has_source = bool(re.search(kw, source_text, re.I))
             if not has_source:
                 issues.append(f"macro claim '{m.group(0)}' có số nhưng không cite: ...{ctx.strip()[:120]}...")
 
@@ -4537,9 +4547,12 @@ def verify_derived_metrics_recompute(req, html):
     default_year = max(years) if years else 2025
 
     def _year_in(ctx, default):
-        m = re.search(r"(20\d\d)", ctx)
-        if m and m.group(1) in (fin.get("revenue_ty") or {}):
-            return m.group(1)
+        # Chọn năm gần claim nhất (xuất hiện cuối trong context), không lấy năm
+        # của hàng bảng trước đó. Lỗi cũ khiến ROE 2025 bị đối chiếu với 2024.
+        matches = [year for year in re.findall(r"20\d\d", ctx)
+                   if year in (fin.get("revenue_ty") or {})]
+        if matches:
+            return matches[-1]
         return str(default)
 
     def _chk(label, claimed, computed, ctx):
@@ -4917,6 +4930,7 @@ def verify_runtime_render(req, html):
         return False, {"error": "no html"}
     issues = []
     checked = 0
+    data_obj = None
 
     # 1. Canvas ids: duy nhất
     canvas_ids = re.findall(r'<canvas[^>]*\bid="([^"]+)"', html)
@@ -4945,6 +4959,18 @@ def verify_runtime_render(req, html):
                              and r not in or_ok and r not in guarded})
     if missing_canvas:
         issues.append(f"new Chart tham chiếu canvas không tồn tại: {missing_canvas}")
+    # Mỗi canvas được xuất ra phải có đúng một initializer. Trước đây biểu đồ
+    # chartReturns có canvas nhưng bị bỏ trống vì dùng OR-chain với chartBSDt2.
+    init_refs = re.findall(
+        r'new\s+Chart\s*\(\s*\$\s*\(\s*["\'](chart[\w]+)["\']\s*\)', html
+    )
+    init_counts = {canvas: init_refs.count(canvas) for canvas in canvas_ids}
+    unbound_canvas = sorted(canvas for canvas, count in init_counts.items() if count == 0)
+    duplicate_init = sorted(canvas for canvas, count in init_counts.items() if count > 1)
+    if unbound_canvas:
+        issues.append(f"canvas không có Chart initializer: {unbound_canvas}")
+    if duplicate_init:
+        issues.append(f"canvas có nhiều Chart initializer: {duplicate_init}")
 
     # 3. const DATA = {...}: parse object thật, so DATA.<key> refs
     m = re.search(r"const\s+DATA\s*=\s*\{", html)
@@ -4986,11 +5012,102 @@ def verify_runtime_render(req, html):
                         issues.append(f"dataset data: DATA.{k}.{sub} phải là array (hiện {type(sv).__name__})")
                 elif not isinstance(v, list):
                     issues.append(f"dataset data: DATA.{k} phải là array (hiện {type(v).__name__})")
+            # Contract độ dài: cùng trục phải có cùng số điểm. Bắt các trường
+            # hợp lệ về type nhưng lệch series và tạo chart thiếu đường.
+            length_groups = [
+                ("years", ["revenue", "netIncome", "cfo", "eps", "roe", "equity", "liabilities"]),
+                ("techWeeks", ["techPrice", "techRSI", "techMA10Series", "techMA20Series", "techMA50Series", "returnIndex"]),
+                ("ddMonths", ["ddValues"]),
+                ("distBins", ["distCounts"]),
+            ]
+            for label_key, series_keys in length_groups:
+                labels = data_obj.get(label_key)
+                if not isinstance(labels, list):
+                    issues.append(f"DATA.{label_key} phải là array")
+                    continue
+                for series_key in series_keys:
+                    series = data_obj.get(series_key)
+                    if not isinstance(series, list):
+                        issues.append(f"DATA.{series_key} phải là array")
+                    elif len(series) != len(labels):
+                        issues.append(
+                            f"series lệch độ dài: {series_key}={len(series)} vs {label_key}={len(labels)}"
+                        )
+            seg_mix = data_obj.get("segMix")
+            if not isinstance(seg_mix, dict) or not isinstance(seg_mix.get("labels"), list) or not isinstance(seg_mix.get("values"), list):
+                issues.append("DATA.segMix phải có schema {labels:[], values:[]}")
+            elif len(seg_mix["labels"]) != len(seg_mix["values"]):
+                issues.append("DATA.segMix labels/values lệch độ dài")
             checked += 1
         except Exception as e:
             issues.append(f"không parse được const DATA: {str(e)[:80]}")
 
-    # 4. Biến trần (labels:/data:) phải khai báo hoặc global hợp lệ
+    # 4. Contract hiển thị: kiểm thứ người đọc thực sự nhìn thấy,
+    # không chỉ kiểm file trung gian. Đây là điểm mù từng khiến tin
+    # tức/peer trông như PASS nhưng không xuất hiện trong report.
+    if re.search(r"\{\{[A-Z][A-Z0-9_]+\}\}", html):
+        issues.append("HTML còn placeholder chưa render")
+    # Contract CSS quan trọng: phát hiện sanitizer/minifier làm mất
+    # descendant combinator hoặc co pseudo-element ``::`` thành ``:``.
+    critical_selectors = [
+        ".topnav-brand .dot", ".section-title .num", ".price-now .ccy",
+        ".fin-table .row-total td", ".callout.plain .callout-body",
+        ".topnav-inner::-webkit-scrollbar",
+    ]
+    missing_css = [selector for selector in critical_selectors if selector not in html]
+    if missing_css:
+        issues.append(f"CSS contract thiếu selector: {missing_css}")
+    broken_css = [selector for selector in (
+        ".topnav-brand.dot", ".section-title.num", ".price-now.ccy",
+        ".fin-table.row-total td", ".callout.plain.callout-body",
+        ".topnav-inner:-webkit-scrollbar",
+    ) if selector in html]
+    if broken_css:
+        issues.append(f"CSS selector bị minify sai: {broken_css}")
+    if not re.search(r'<main\b[^>]*\bid=["\']main-content["\']', html):
+        issues.append("thiếu landmark <main id='main-content'>")
+    if not re.search(r'<a\b[^>]*class=["\'][^"\']*skip-link', html):
+        issues.append("thiếu skip-link cho bàn phím")
+    if not re.search(r'<nav\b[^>]*\baria-label=', html):
+        issues.append("thanh điều hướng thiếu aria-label")
+    table_headers = re.findall(r"<th\b([^>]*)>", html, re.I)
+    if table_headers and any(not re.search(r'\bscope=["\']col["\']', attrs, re.I)
+                             for attrs in table_headers):
+        issues.append("có tiêu đề bảng <th> thiếu scope='col'")
+
+    sec_news_match = re.search(
+        r'<section\b[^>]*\bid=["\']sec-news["\'][^>]*>(.*?)</section>',
+        html, re.I | re.S,
+    )
+    if not sec_news_match:
+        issues.append("thiếu section tin tức hiển thị")
+    else:
+        news_html = sec_news_match.group(1)
+        news_digest = _load_json_rel("news_digest.json")
+        articles = (news_digest or {}).get("articles") or []
+        if articles:
+            titles = [str(a.get("title") or "").strip() for a in articles[:5]]
+            if not any(title and html_lib.escape(title) in news_html for title in titles):
+                issues.append("news_digest có bài nhưng sec-news không hiển thị tiêu đề")
+        elif not re.search(r"Không có tin mới|Chưa có dữ liệu tin tức", news_html, re.I):
+            issues.append("news_digest rỗng nhưng sec-news không có empty-state trung thực")
+
+    if isinstance(data_obj, dict):
+        peers = data_obj.get("peers") or []
+        valid_peers = [p for p in peers if isinstance(p, dict)
+                       and isinstance(p.get("x"), (int, float))
+                       and isinstance(p.get("y"), (int, float))]
+        has_peer_canvas = 'id="chartPeerScatter"' in html
+        if len(valid_peers) >= 2 and not has_peer_canvas:
+            issues.append("có đủ peer nhưng không render chartPeerScatter")
+        if len(valid_peers) < 2:
+            if has_peer_canvas:
+                issues.append("thiếu peer nhưng vẫn render chartPeerScatter rỗng")
+            if "Chưa đủ ít nhất hai doanh nghiệp" not in html:
+                issues.append("thiếu peer nhưng không có empty-state giải thích")
+    checked += 1
+
+    # 5. Biến trần (labels:/data:) phải khai báo hoặc global hợp lệ
     declared = set(re.findall(r"\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)", html))
     declared |= set(re.findall(r"\bfunction\s+([A-Za-z_$][\w$]*)", html))
     globals_ok = {"DATA", "Chart", "window", "document", "Math", "JSON", "Object", "Array",
@@ -5010,14 +5127,14 @@ def verify_runtime_render(req, html):
             continue
         issues.append(f"chart dùng biến '{name}' (labels:/data:) nhưng không khai báo const/let/var/function")
 
-    # 5. Dùng $() mà không khai báo $ (và không có jQuery) -> ReferenceError khi load
+    # 6. Dùng $() mà không khai báo $ (và không có jQuery) -> ReferenceError khi load
     if re.search(r"\$\s*\(", html) and "$" not in declared and "$" not in globals_ok:
         issues.append("dùng $() nhưng không khai báo $ và không có jQuery — ReferenceError khi load")
 
     passed = len(issues) == 0
     return passed, {"canvas_total": len(canvas_ids), "chart_refs": sorted(set(chart_refs)),
                     "issues": issues[:8],
-                    "note": "static runtime-readiness: canvas id / DATA keys / dataset data shape / bare vars"}
+                    "note": "static runtime-readiness: canvas/DATA + DOM/news/peer/accessibility contract"}
 
 
 def verify_no_internal_meta(req, html):

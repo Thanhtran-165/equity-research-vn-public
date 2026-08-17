@@ -7,7 +7,7 @@ Fix: REQ-003 (split_audit cp_back_calc), 005/037 (tech_score thật),
 033/034/036 (format số), 069 (DATA keys + canvas match).
 Usage: python3 build_report.py <TICKER> [SECTOR]
 """
-import sys, json, os, re, statistics, traceback, subprocess, math, tempfile
+import sys, json, os, re, statistics, traceback, subprocess, math, tempfile, html as html_lib
 from datetime import datetime, timedelta
 
 from runtime_environment import SponsorDependencyError, raise_sponsor_dependency
@@ -162,6 +162,61 @@ def ft(x):
 def CANVAS(cid, h=280, label=None):
     lab = label or f'Biểu đồ {cid}'
     return f'<div class="chart-row"><div class="chart-card"><div class="height-wrapper" style="position:relative;height:{h}px"><canvas id="{cid}" role="img" aria-label="{lab}"></canvas></div></div></div>'
+
+
+def clean_reader_provenance(html):
+    """Bỏ nhãn nguồn kỹ thuật khỏi prose, giữ nguyên phụ lục nguồn.
+
+    Cách cũ chèn ``span.audit-source`` sau render và có thể tách dấu ngoặc khỏi
+    nội dung. Prose công khai cần sạch; provenance đầy đủ vẫn nằm trong section
+    ``sec-source`` và các sidecar kiểm định.
+    """
+    source_marker = '<section id="sec-source"'
+    split_at = html.find(source_marker)
+    if split_at < 0:
+        return html
+    reader, appendix = html[:split_at], html[split_at:]
+    reader = re.sub(
+        r'<span class="audit-source"[^>]*>.*?</span>', '', reader,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    labels = (
+        r'theo\s+vnstock(?:\s+Company\.news|\s+Quote)?'
+        r'|theo\s+BCTC\s+kiểm\s+toán(?:\s+năm\s+20\d{2})?(?:\s+và\s+(?:bối\s+cảnh\s+ngành|BCLCTT))?'
+        r'|theo\s+BCLCTT'
+        r'|theo\s+bối\s+cảnh\s+ngành'
+        r'|theo\s+hồ\s+sơ\s+công\s+ty'
+        r'|theo\s+peer\s+vnstock'
+        r'|theo\s+WACC\s+ước\s+tính'
+        r'|theo\s+disclaimer'
+    )
+    def clean_text_node(text):
+        """Chỉ dọn text node; tuyệt đối không rewrite CSS/JS/tag.
+
+        Regex cũ chạy trên toàn HTML nên ``.section-title .num`` bị
+        biến thành ``.section-title.num`` và ``::`` bị co thành ``:``.
+        """
+        text = re.sub(r'\(\s*(?:' + labels + r')\s*\)', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'\(\s*(?:' + labels + r')\s*,\s*([^()]*)\)', r'(\1)', text, flags=re.IGNORECASE)
+        text = re.sub(r'\(([^()]*)\s*,\s*(?:' + labels + r')\s*\)', r'(\1)', text, flags=re.IGNORECASE)
+        text = re.sub(r'\b(?:' + labels + r')\s*,?\s*', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'\s*[\u2014-]\s*\)', ')', text)
+        text = re.sub(r'\(\s*\)', '', text)
+        text = re.sub(r'\(\s*,\s*', '(', text)
+        text = re.sub(r'^\s*:\s*', '', text)
+        text = re.sub(r'\s+([,.;:])', r'\1', text)
+        text = re.sub(r',\s*,+', ',', text)
+        text = re.sub(r'([.;:])\s*\1+', r'\1', text)
+        text = re.sub(r' {2,}', ' ', text)
+        return text
+
+    # Giữ nguyên mọi tag, style và script; chỉ động vào nội dung giữa tag.
+    parts = re.split(
+        r'(<(?:style|script)\b.*?</(?:style|script)>|<[^>]+>)',
+        reader, flags=re.IGNORECASE | re.DOTALL,
+    )
+    reader = ''.join(part if part.startswith('<') else clean_text_node(part) for part in parts)
+    return reader + appendix
 
 # ============ FETCH ============
 def fetch():
@@ -375,11 +430,13 @@ def tech_score(D_raw):
     ret1w=(price_w['cv'].pct_change()*100).round(1).fillna(0).tolist()
     techPrice=price_w['cv'].round(0).tolist()
     pwm=price_w['cv']
+    ma10w=pwm.rolling(10,min_periods=1).mean().round(0).tolist()
     ma20w=pwm.rolling(20,min_periods=1).mean().round(0).tolist()
     ma50w=pwm.rolling(50,min_periods=1).mean().round(0).tolist()
     gw=pwm.diff().clip(lower=0).rolling(14,min_periods=1).mean()
     lw=(-pwm.diff().clip(upper=0)).rolling(14,min_periods=1).mean()
     rsi_w=(100-100/(1+gw/lw.replace(0,np.nan))).fillna(50).round(0).tolist()
+    return_index=((pwm/pwm.iloc[0]-1)*100).round(1).tolist() if len(pwm) else []
     bins=[-5,-4,-3,-2,-1,0,1,2,3]; counts=[int(sum(1 for r in ret1w if bins[i]<=r<bins[i+1])) for i in range(len(bins)-1)]
     counts.append(int(sum(1 for r in ret1w if r>=3)))
     last252m=price.set_index('time').resample('ME').last().tail(12)
@@ -413,8 +470,8 @@ def tech_score(D_raw):
     return dict(ma10=ma10,ma20=ma20,ma50=ma50,hi52=hi52,lo52=lo52,max_dd=max_dd,rsi14=rsi14,
         macd=macd_last,macd_sig=macd_sig_last,bb_lower=bb_lower,bb_upper=bb_upper,pct_from_high=pct_hi,
         score=score,verdict=verdict,
-        rsi_w=rsi_w[-52:],techPrice=techPrice[-52:],ma20w=ma20w[-52:],ma50w=ma50w[-52:],
-        ret1w=ret1w[-52:],weeks=list(range(1,len(ret1w[-52:])+1)),
+        rsi_w=rsi_w[-52:],techPrice=techPrice[-52:],ma10w=ma10w[-52:],ma20w=ma20w[-52:],ma50w=ma50w[-52:],
+        ret1w=ret1w[-52:],return_index=return_index[-52:],weeks=list(range(1,len(ret1w[-52:])+1)),
         dd_months=dd_months,dd_values=dd_values,bins=bins,counts=counts)
 
 # ============ NEWS (REQ-008) ============
@@ -481,7 +538,7 @@ def fetch_peers():
     (gọi lại mỗi mã = lãng phí 1.000 calls); peer overview cache theo ticker (cùng peer
     xuất hiện trong nhiều mã cùng ngành). Giảm 4 calls/mã → ~1-2 calls/mã."""
     try:
-        from vnstock_data import Listing, Company
+        from vnstock_data import Listing, Fundamental
         # cache industries (1 lần cho cả batch)
         cache_ind = os.path.join(CACHE_DIR, 'industries.json')
         if os.path.exists(cache_ind):
@@ -509,30 +566,57 @@ def fetch_peers():
         if same.empty and len(icb) > 2:
             # fallback: cùng tên ngành cấp 3
             same = ind[(ind['icb_name'] == icb_name) & (ind['symbol'] != TICKER)]
-        peers_sym = same['symbol'].tolist()[:3]
+        # Không cắt ở 3 mã đầu: một số mã không có ratio hợp lệ. Dò một nhóm
+        # nhỏ rồi dừng khi đã lấy đủ 3 peer có cả P/E và P/B.
+        peers_sym = same['symbol'].drop_duplicates().tolist()[:12]
         cache = _load_peer_cache()
+        if cache.get('_schema') != 'fundamental-ratio-v1':
+            cache = {'_schema':'fundamental-ratio-v1'}
         dirty = False
         out = []
+
+        def latest_positive_ratio(frame, ratio_id):
+            if frame is None or not hasattr(frame, 'columns') or frame.empty or 'id' not in frame.columns:
+                return None
+            rows = frame[frame['id'].astype(str).str.upper() == ratio_id]
+            if rows.empty:
+                return None
+            annual = sorted(
+                (c for c in frame.columns if re.fullmatch(r'20\d{2}', str(c))),
+                key=lambda c: int(str(c)), reverse=True,
+            )
+            last_complete_year = datetime.now().year - 1
+            for col in annual:
+                if int(str(col)) > last_complete_year:
+                    continue
+                try:
+                    value = float(rows.iloc[0][col])
+                    if math.isfinite(value) and value > 0:
+                        return value
+                except (TypeError, ValueError):
+                    continue
+            return None
+
         for ps in peers_sym:
             if ps in cache:
                 pe, pb = cache[ps].get('pe'), cache[ps].get('pb')
             else:
                 try:
-                    ov = Company(symbol=ps, source='VCI').overview()
-                    pe = pb = None
-                    if hasattr(ov, 'columns') and not ov.empty:
-                        pe = float(ov['pe'].iloc[0]) if 'pe' in ov.columns and ov['pe'].iloc[0] else None
-                        pb = float(ov['pb'].iloc[0]) if 'pb' in ov.columns and ov['pb'].iloc[0] else None
+                    ratios = Fundamental().equity(ps).ratio(source='VCI', format='wide')
+                    pe = latest_positive_ratio(ratios, 'RT_VALUE_PE')
+                    pb = latest_positive_ratio(ratios, 'RT_VALUE_PB')
                     cache[ps] = {'pe': pe, 'pb': pb}
                     dirty = True
                 except Exception:
                     continue
-            if pe or pb:
+            if pe and pb:
                 out.append({
                     'ticker': ps,
                     'pe': round(pe, 2) if isinstance(pe, (int, float)) and pe > 0 else None,
                     'pb': round(pb, 2) if isinstance(pb, (int, float)) and pb > 0 else None,
                 })
+                if len(out) == 3:
+                    break
         if dirty:
             _save_peer_cache(cache)
         return out or None
@@ -633,10 +717,13 @@ def build_all(D_raw, tech, news, real_peers=None):
         "max_drawdown_52w":round(tech['max_dd'],1),"tech52wLow":round(tech['lo52']),"tech52wHigh":round(tech['hi52']),
         "techMA10":round(tech['ma10']),"techMA20":round(tech['ma20']),"techMA50":round(tech['ma50']),
         "techRSI":tech['rsi_w'],"techWeeks":tech['weeks'],"techPrice":tech['techPrice'],
+        "techMA10Series":tech['ma10w'],"techMA20Series":tech['ma20w'],"techMA50Series":tech['ma50w'],
         "techMA20val":tech['ma20w'],"techMA50val":tech['ma50w'],"ret1w":tech['ret1w'],
+        "returnIndex":tech['return_index'],"macd":tech['macd'],"macd_signal":tech['macd_sig'],
+        "bb_lower":tech['bb_lower'],"bb_upper":tech['bb_upper'],
         "ddMonths":tech['dd_months'],"ddValues":tech['dd_values'],"distBins":tech['bins'],"distCounts":tech['counts'],
-        "segMix":[],  # không bịa cơ cấu mảng khi data sponsor thiếu (VN100 v2)
-        "peers":[{"label":p["ticker"],"x":p["pb"],"y":p["pe"]} for p in peers['peers']],
+        "segMix":{"labels":[],"values":[]},  # schema ổn định; rỗng khi nguồn không có phân khúc
+        "peers":[{"label":p["ticker"],"x":p["pb"],"y":p["pe"],"own":p["ticker"]==TICKER,"r":7 if p["ticker"]==TICKER else 6} for p in peers['peers']],
         "_provenance":{"built_at":(D_raw.get('as_of_date') if isinstance(D_raw, dict) else None),"source":"vnstock sponsor","sector":SECTOR},
         "sector":SECTOR,"statement_type":D_raw.get('statement_type','corporate'),"company_name":TICKER,
         "tech_score":tech['score'],"verdict":tech['verdict'],"rsi14":round(tech['rsi14'],1),
@@ -669,14 +756,22 @@ def build_all(D_raw, tech, news, real_peers=None):
 # ============ RENDER (REQ-013/024/029/033/034/036/069) ============
 def render(D,cagr,npat_growth,roe_hist,cp_back,cp_consistent,graham,pe5med,news):
     t=TICKER; cn=TICKER; years=D['years']
+    # Khi nguồn không cung cấp tên pháp nhân, không lặp ticker trong tiêu đề.
+    hero_title = t if not cn or str(cn).strip().upper() == t.upper() else f'{t} · {cn}'
     rev=D['revenue']; npat=D['netProfit']; eps=D['eps']; eq=D['equity']
     assets=D['totalAssets']; bvps=D.get('bvps',[]); pe=D['pe']; pb=D['pb']; price=D['price']
     mcap=D['marketCap']; max_dd=D['max_drawdown_52w']
     rev_last=rev[-1]; rev_first=rev[0]; npat_last=npat[-1]; npat_first=npat[0]
     eps_last=eps[-1]; roe_last=roe_hist[-1]
-    src=f'BCTC kiểm toán {t} — sponsor vnstock_data (VCI)'
+    src=f'BCTC kiểm toán {t} · dữ liệu VCI'
     is_bank=IS_BANK
     is_financial=is_bank or D.get('statement_type')=='financial_institution'
+    sector_label={
+        'tech':'công nghệ','finance':'tài chính','banking':'ngân hàng',
+        'insurance':'bảo hiểm','realestate':'bất động sản','materials':'vật liệu',
+        'energy':'năng lượng','industrial':'công nghiệp','consumer':'hàng tiêu dùng',
+        'retail':'bán lẻ','pharma':'dược phẩm','utilities':'tiện ích',
+    }.get(SECTOR, SECTOR)
     rev_label='Tổng thu nhập hoạt động' if is_financial else 'Doanh thu thuần'
     R2='BCTC'; R3='vnstock'; R4='vnstock Quote'; R5='disclaimer'; R6='BCLCTT'; R7='bối cảnh ngành'; R8='peer vnstock'; R9='hồ sơ công ty'; R10='WACC ước tính'
     capex_arr=D.get('capex',[])
@@ -697,25 +792,25 @@ def render(D,cagr,npat_growth,roe_hist,cp_back,cp_consistent,graham,pe5med,news)
     # P1 (Sol 2026-08-08): nhãn kỹ thuật mô tả tín hiệu, KHÔNG dùng từ khuyến nghị BUY/SELL
     verdict_label = {'SELL': 'tín hiệu tiêu cực', 'NEUTRAL': 'trung lập', 'BUY': 'tín hiệu tích cực'}.get(verdict, verdict)
     # number formats verifier-friendly (comma sep, 1 dec for tỷ, no trailing zero in P/B)
-    hero=f'''<div class="hero-card"><div class="hero-left"><div class="hero-badge">Investment Evidence Pack · 1–3 năm</div>
-<h1 class="hero-title">{t} · {cn}</h1>
-<p class="hero-sub">Báo cáo nghiên cứu — <strong>không khuyến nghị mua/bán</strong>. Dữ liệu theo {src} (BCTC kiểm toán).</p></div>
+    hero=f'''<div class="hero-card"><div class="hero-left">
+<h1 class="hero-title">{hero_title}</h1>
+<p class="hero-sub">Báo cáo nghiên cứu — <strong>không khuyến nghị mua/bán</strong>.</p></div>
 <div class="hero-right"><div class="kpi-grid">
 <div class="kpi"><div class="kpi-label">Giá (VND)</div><div class="kpi-val mono">{fv(price)}</div></div>
 <div class="kpi"><div class="kpi-label">Vốn hóa</div><div class="kpi-val mono">{int(mcap)} tỷ</div></div>
-<div class="kpi"><div class="kpi-label">P/E (vnstock)</div><div class="kpi-val mono">{pe_text}</div></div>
-<div class="kpi"><div class="kpi-label">P/B (vnstock)</div><div class="kpi-val mono">{pb_text}</div></div>
-<div class="kpi"><div class="kpi-label">Tech Score</div><div class="kpi-val mono">{score:+d} {verdict_label}</div></div>
+<div class="kpi"><div class="kpi-label">P/E</div><div class="kpi-val mono">{pe_text}</div></div>
+<div class="kpi"><div class="kpi-label">P/B</div><div class="kpi-val mono">{pb_text}</div></div>
+<div class="kpi"><div class="kpi-label">Điểm kỹ thuật</div><div class="kpi-val mono">{score:+d} · {verdict_label}</div></div>
 </div></div></div>'''
     exec_html=f'''<div class="card">
-<p>Theo BCTC kiểm toán năm {years[-1]}: doanh thu {t} đạt {ft(rev_last)} tỷ VND. Lợi nhuận sau thuế năm {years[-1]} đạt {ft(npat_last)} tỷ VND (theo BCTC kiểm toán năm {years[-1]}). P/E {pe_text}, P/B {pb_text} (theo vnstock Quote). Tech Score {score:+d} ({verdict_label}).</p>
+<p>Năm {years[-1]}, doanh thu {t} đạt {ft(rev_last)} tỷ VND và lợi nhuận sau thuế đạt {ft(npat_last)} tỷ VND. P/E {pe_text}, P/B {pb_text}; điểm kỹ thuật {score:+d} ({verdict_label}).</p>
 <p>5 năm: CAGR doanh thu {cagr_text} (theo BCTC kiểm toán). ROE năm {years[-1]} đạt {roe_last:.1f}% (theo BCTC kiểm toán năm {years[-1]}). EPS năm {years[-1]} đạt {fv(eps_last)} VND/cp (theo BCTC kiểm toán năm {years[-1]}).</p>
-<p>Mọi số liệu tài chính được cross-check theo bẫy 5B (back-calc CP = LNST/EPS, split-adjusted khi cần) — {t} không có split trong 5 năm, EPS lịch sử giữ theo báo cáo (theo BCTC kiểm toán).</p>
-<p><strong>Tech Score {score:+d} — {verdict}</strong> (theo vnstock Quote, MA/RSI/MACD weekly 52 tuần). Max drawdown 52 tuần theo vnstock Quote, {max_dd:.1f}% (theo vnstock Quote). Đây là bằng chứng đầu tư, không phải khuyến nghị giao dịch.</p>
+<p>EPS lịch sử được giữ theo số đã công bố; hệ thống chỉ đối chiếu với lợi nhuận và số cổ phiếu để phát hiện chênh lệch, không ghi đè số báo cáo.</p>
+<p><strong>Điểm kỹ thuật {score:+d} · {verdict_label}</strong>, tổng hợp từ MA, RSI và MACD trong 52 tuần. Mức giảm tối đa trong giai đoạn này là {max_dd:.1f}%. Chỉ số này mô tả trạng thái giá, không phải khuyến nghị giao dịch.</p>
 </div>'''
     biz=f'''<div class="card">
-<p><strong>{t}</strong> hoạt động {('trong ngành ngân hàng thương mại cổ phần' if is_bank else ('trong nhóm định chế tài chính phi ngân hàng' if is_financial else 'trong ngành '+SECTOR))}. Nguồn thu chính là <strong>{rev_label}</strong> (theo BCTC kiểm toán). Năm {years[-1]}, {rev_label} đạt {ft(rev_last)} tỷ VND (theo BCTC kiểm toán).</p>
-<p>{('Cơ cấu thu nhập chi tiết không có trong data sponsor — xem BCTC đầy đủ (theo BCTC kiểm toán).' if is_financial else 'Cơ cấu doanh thu theo mảng hoạt động chính của doanh nghiệp.')}</p>
+<p><strong>{t}</strong> hoạt động {('trong ngành ngân hàng thương mại cổ phần' if is_bank else ('trong nhóm định chế tài chính phi ngân hàng' if is_financial else 'trong ngành '+sector_label))}. Nguồn thu chính là <strong>{rev_label}</strong> (theo BCTC kiểm toán). Năm {years[-1]}, {rev_label} đạt {ft(rev_last)} tỷ VND (theo BCTC kiểm toán).</p>
+<p>{('Chưa có dữ liệu cơ cấu thu nhập chi tiết; cần xem báo cáo tài chính đầy đủ.' if is_financial else 'Cơ cấu doanh thu theo mảng hoạt động chính của doanh nghiệp.')}</p>
 <p>Tổng tài sản năm {years[-1]} đạt {ft(assets[-1])} tỷ VND, vốn chủ sở hữu {ft(eq[-1])} tỷ VND (theo BCTC kiểm toán).</p>
 </div>'''
     sp = load_sector_pack(SECTOR)
@@ -729,8 +824,8 @@ def render(D,cagr,npat_growth,roe_hist,cp_back,cp_consistent,graham,pe5med,news)
     else:
         pec = traps = crit = ''
     industry=f'''<div class="card">
-<p>{t} nằm trong nhóm {('ngân hàng thương mại lớn tại Việt Nam' if is_bank else 'doanh nghiệp lớn trong ngành '+SECTOR)}, cạnh tranh với các peer (theo bối cảnh ngành). Vốn hóa đạt {int(mcap)} tỷ VND (theo vnstock Quote).</p>
-<p>Ngành {('ngân hàng chịu điều tiết của NHNN (tỷ lệ an toàn vốn, room tín dụng, nợ xấu)' if is_bank else SECTOR+' chịu biến động chu kỳ kinh doanh')} (theo bối cảnh ngành). Mô hình kinh doanh của {t} có {('thiên về bán lẻ' if is_bank else 'đặc thù riêng')} (theo bối cảnh ngành).</p>
+<p>{t} nằm trong nhóm {('ngân hàng thương mại lớn tại Việt Nam' if is_bank else 'doanh nghiệp lớn trong ngành '+sector_label)}, cạnh tranh với các doanh nghiệp cùng ngành (theo bối cảnh ngành). Vốn hóa đạt {int(mcap)} tỷ VND (theo vnstock Quote).</p>
+<p>Ngành {('ngân hàng chịu điều tiết của NHNN (tỷ lệ an toàn vốn, hạn mức tín dụng, nợ xấu)' if is_bank else sector_label+' chịu biến động chu kỳ kinh doanh')} (theo bối cảnh ngành). Mô hình kinh doanh của {t} có {('thiên về bán lẻ' if is_bank else 'đặc thù riêng')} (theo bối cảnh ngành).</p>
 {('<h3>Phân tích ngành — '+sp['group']+' (khái niệm ngành chuẩn, theo bối cảnh ngành)</h3>'
  '<p><strong>Đặc thù ngành</strong>: '+pec+'.</p>'
  '<p><strong>Cách đọc BCTC — bẫy số liệu</strong>: '+traps+'.</p>'
@@ -742,21 +837,29 @@ def render(D,cagr,npat_growth,roe_hist,cp_back,cp_consistent,graham,pe5med,news)
         hist_rows+=f'<tr><td>{b}{y}{eb}</td><td>{b}{ft(rev[i])}{eb}</td><td>{b}{ft(npat[i])}{eb}</td><td>{b}{fv(eps[i])}{eb}</td><td>{b}{roe_hist[i]:.1f}{eb}</td><td>{b}{ft(eq[i])}{eb}</td></tr>'
     history=f'''
 {CANVAS('chartHistRev',label='Doanh thu và lợi nhuận 5 năm')}
-<p>Số liệu 5 năm (theo BCTC kiểm toán):</p>
-<table class="tbl"><thead><tr><th>Năm</th><th>{rev_label} (tỷ VND)</th><th>Lợi nhuận (tỷ VND)</th><th>EPS (VND)</th><th>ROE (%)</th><th>VCSH (tỷ VND)</th></tr></thead>
-<tbody>{hist_rows}</tbody></table>
-<p><b>Điểm nhấn 5 năm (theo BCTC kiểm toán):</b></p>
-<ul>
-<li><b>CAGR doanh thu FY{years[0]}–FY{years[-1]}: {cagr_text}</b> (theo BCTC kiểm toán).</li>
-<li><b>Lợi nhuận sau thuế năm {years[-1]}: {ft(npat_last)} tỷ VND</b> (theo BCTC kiểm toán năm {years[-1]}).</li>
-<li><b>ROE năm {years[-1]}: {roe_last:.1f}%</b> (theo BCTC kiểm toán năm {years[-1]}).</li>
-</ul>
-{CANVAS('chartBSDt2',label='Chỉ số cân đối kế toán 5 năm')}
+<div class="history-panel">
+  <div class="history-head">
+    <div><div class="history-title">Số liệu tài chính 5 năm</div><div class="history-caption">Đơn vị: tỷ VND, ngoại trừ EPS và ROE</div></div>
+  </div>
+  <div class="table-wrap">
+    <table class="fin-table"><thead><tr><th>Năm</th><th>{rev_label}</th><th>Lợi nhuận</th><th>EPS (VND)</th><th>ROE (%)</th><th>VCSH</th></tr></thead>
+    <tbody>{hist_rows}</tbody></table>
+  </div>
+  <div class="history-highlights" aria-label="Điểm nhấn tài chính 5 năm">
+    <article class="history-stat"><div class="history-stat-label">ROE năm {years[-1]}</div><div class="history-stat-value">{roe_last:.1f}%</div><span class="audit-source" aria-hidden="true">BCTC kiểm toán</span></article>
+    <article class="history-stat"><div class="history-stat-label">Lợi nhuận sau thuế năm {years[-1]}</div><div class="history-stat-value">{ft(npat_last)} tỷ</div><span class="audit-source" aria-hidden="true">BCTC kiểm toán</span></article>
+    <article class="history-stat"><div class="history-stat-label">CAGR doanh thu</div><div class="history-stat-value">{cagr_text}</div><div class="history-stat-meta">FY{years[0]}–FY{years[-1]}</div><span class="audit-source" aria-hidden="true">BCTC kiểm toán</span></article>
+  </div>
+</div>
+{CANVAS('chartEpsRoe',label='EPS và ROE 5 năm')}
 '''
-    seg=f'''<p>Cơ cấu nguồn thu {t} năm {years[-1]}: {rev_label} đạt {ft(rev_last)} tỷ VND (theo BCTC kiểm toán). Phân bổ chi tiết theo mảng hoạt động không có trong data sponsor — xem BCTC đầy đủ của doanh nghiệp (theo BCTC kiểm toán).</p>
-<p><strong>Tiêu chí theo dõi ngành {SECTOR}</strong> (khái niệm ngành chuẩn, theo hồ sơ công ty): {('NIM, chất lượng tài sản, nợ xấu, đòn bẩy và an toàn vốn' if is_financial else 'sản lượng tiêu thụ, giá bán, biên lợi nhuận gộp, hàng tồn kho, dòng tiền hoạt động')}. Nhà đầu tư 1-3 năm nên theo dõi các chỉ số này qua BCTC hàng quý (theo hồ sơ công ty).</p>
-{('' if not (D.get('segMix') or []) else CANVAS('chartSegMix',label='Cơ cấu doanh thu'))}
-<p>{('Phân bổ chi tiết theo mảng không có trong data sponsor — xem BCTC đầy đủ của doanh nghiệp (theo BCTC kiểm toán).' if is_bank else 'Mảng phụ bổ sung.')} (ước tính theo hồ sơ công ty).</p>
+    seg_mix=D.get('segMix') or {}
+    has_segment_mix=(isinstance(seg_mix,dict) and bool(seg_mix.get('labels')) and
+                     len(seg_mix.get('labels',[])) == len(seg_mix.get('values',[])))
+    seg=f'''<p>Cơ cấu nguồn thu {t} năm {years[-1]}: {rev_label} đạt {ft(rev_last)} tỷ VND (theo BCTC kiểm toán). Chưa có dữ liệu phân bổ chi tiết theo mảng hoạt động.</p>
+<p><strong>Tiêu chí theo dõi ngành {sector_label}</strong> (khái niệm ngành chuẩn, theo hồ sơ công ty): {('NIM, chất lượng tài sản, nợ xấu, đòn bẩy và an toàn vốn' if is_financial else 'sản lượng tiêu thụ, giá bán, biên lợi nhuận gộp, hàng tồn kho, dòng tiền hoạt động')}. Nhà đầu tư 1-3 năm nên theo dõi các chỉ số này qua BCTC hàng quý (theo hồ sơ công ty).</p>
+{(CANVAS('chartSegMix',label='Cơ cấu doanh thu') if has_segment_mix else '<div class="callout">Chưa đủ dữ liệu phân khúc để vẽ biểu đồ cơ cấu doanh thu.</div>')}
+<p>{('Chưa có dữ liệu phân bổ chi tiết theo mảng.' if is_bank else 'Mảng phụ bổ sung.')} (ước tính theo hồ sơ công ty).</p>
 <p>{('' if is_bank else 'Đa dạng hóa vừa phải.')} (ước tính theo hồ sơ công ty).</p>
 <p>Hệ quả: kết quả kinh doanh {('gắn chặt chất lượng tài sản và chu kỳ tín dụng' if is_bank else 'gắn chu kỳ ngành')} (theo bối cảnh ngành).</p>
 <p>Đánh giá đa dạng hóa: {t} {('tập trung vào ngân hàng bán lẻ — thẻ tín dụng và cho vay khách hàng cá nhân là động lực chính' if is_bank else 'tập trung vào mảng hoạt động cốt lõi')} (theo hồ sơ công ty).</p>
@@ -775,19 +878,19 @@ def render(D,cagr,npat_growth,roe_hist,cp_back,cp_consistent,graham,pe5med,news)
 
     thesis=f'''
 <div class="thesis-grid">
-<div><h3>Bull case (1–3 năm)</h3>
+<div><h3>Kịch bản tích cực (1–3 năm)</h3>
 <ul>
 <li>{rev_label} năm {years[-1]} đạt {ft(rev_last)} tỷ VND, CAGR doanh thu {cagr_text} (theo BCTC kiểm toán).</li>
 <li>ROE {roe_last:.1f}%, EPS {fv(eps_last)} VND/cp năm {years[-1]} (theo BCTC kiểm toán).</li>
 <li>P/B {pb_text} (theo vnstock Quote, giá {fv(price)} VND).</li>
 </ul></div>
-<div><h3>Bear case</h3>
+<div><h3>Kịch bản thận trọng</h3>
 <ul>
-<li>Max drawdown 52 tuần theo vnstock Quote, {max_dd:.1f}% (theo vnstock Quote).</li>
-<li>{('Nợ xấu, room tín dụng — áp lực biên lợi nhuận' if is_bank else 'CFO biến động, vốn lưu động — rủi ro thanh khoản')} (theo bối cảnh ngành).</li><li>Tech Score {score:+d} — {verdict_label} (theo vnstock Quote).</li>
+<li>Mức giảm tối đa trong 52 tuần là {max_dd:.1f}% (theo vnstock Quote).</li>
+<li>{('Nợ xấu, hạn mức tín dụng — áp lực biên lợi nhuận' if is_bank else 'CFO biến động, vốn lưu động — rủi ro thanh khoản')} (theo bối cảnh ngành).</li><li>Điểm kỹ thuật {score:+d} · {verdict_label} (theo vnstock Quote).</li>
 </ul></div>
 </div>
-{CANVAS('chartThesisCapex',label='Capex và dòng tiền')}
+{(CANVAS('chartThesisCapex',label='Capex thực tế 5 năm') if any(x is not None for x in capex_arr) else '<div class="callout">Chưa đủ dữ liệu Capex để vẽ biểu đồ.</div>')}
 '''
     eps_mean = statistics.mean(eps) if eps else 0
     cycle_pe_active = (len(eps) >= 4 and eps_mean > 0 and
@@ -805,54 +908,79 @@ def render(D,cagr,npat_growth,roe_hist,cp_back,cp_consistent,graham,pe5med,news)
         pe_normalized_clause = ''
     valuation=f'''
 <p>Định giá {t} (theo vnstock Quote, giá {fv(price)} VND):</p>
-<table class="tbl"><thead><tr><th>Phương pháp</th><th>Giá trị (VND)</th><th>Ghi chú</th></tr></thead>
+<div class="table-wrap"><table class="fin-table"><thead><tr><th>Phương pháp</th><th>Giá trị (VND)</th><th>Ghi chú</th></tr></thead>
 <tbody>
-<tr><td>P/E (peer median)</td><td>{fv(pe_target)}</td><td>{pe5med_text} × EPS {fv(eps_last)} (theo vnstock Quote).</td></tr>
-<tr><td>P/B method</td><td>{fv(pb_target)}</td><td>{pb_text} × BVPS {fv(bvps[-1]) if bvps else "n/a"} (theo vnstock Quote).</td></tr>
+<tr><td>P/E (trung vị ngành)</td><td>{fv(pe_target)}</td><td>{pe5med_text} × EPS {fv(eps_last)} (theo vnstock Quote).</td></tr>
+<tr><td>Phương pháp P/B</td><td>{fv(pb_target)}</td><td>{pb_text} × BVPS {fv(bvps[-1]) if bvps else "n/a"} (theo vnstock Quote).</td></tr>
 {('' if is_financial else '<tr><td>Graham Number</td><td>' + graham_text + '</td><td>' + ('√(22.5 × EPS × BVPS) — heuristic tham khảo, không phải target price' if graham_ok else 'N/A — không áp dụng khi EPS hoặc BVPS không dương') + ' (theo vnstock Quote).</td></tr>')}
-</tbody></table>
+</tbody></table></div>
 {CANVAS('chartValPE',label='P/E và P/B lịch sử 5 năm')}
 <p><b>P/E {pe_text}</b> ({fv(price)} ÷ {fv(eps_last)}, theo vnstock Quote). <b>P/B {pb_text}</b> ({fv(price)} ÷ {fv(bvps[-1]) if bvps else "n/a"}, theo vnstock Quote). Median 5 năm P/E {pe5med_text} (theo BCTC kiểm toán).</p>
 {('' if is_financial else '''<h3>WACC ước tính</h3>
-<table class="tbl"><thead><tr><th>Giả định</th><th>Giá trị</th><th>Nguồn</th></tr></thead>
+<div class="table-wrap"><table class="fin-table"><thead><tr><th>Giả định</th><th>Giá trị</th><th>Cơ sở</th></tr></thead>
 <tbody>
 <tr><td>Risk-free rate (Rf)</td><td>3,0–3,5%</td><td>TPCP VN 10Y (theo WACC ước tính).</td></tr>
 <tr><td>ERP</td><td>7–8%</td><td>Damodaran VN (theo WACC ước tính).</td></tr>
 <tr><td>Beta</td><td>~0,9</td><td>ước tính vs VNINDEX (theo vnstock Quote).</td></tr>
 <tr><td>Terminal growth (g)</td><td>2–3%</td><td>lạm phát mục tiêu (theo WACC ước tính).</td></tr>
 <tr><td>WACC</td><td>~9–10%</td><td>CAPM (theo WACC ước tính).</td></tr>
-</tbody></table>''')}
+</tbody></table></div>''')}
 <p>{('Định chế tài chính: định giá chủ yếu P/B + ROE (theo bối cảnh ngành) — WACC/FCF kiểu công nghiệp không áp dụng.' if is_financial else '')}</p>
 <h3>Chất lượng lợi nhuận — CFO vs LNST (5 năm)</h3>
 <p>{('Định chế tài chính: CFO biến động theo hoạt động cấp vốn/tín dụng, không dùng FCFF.' if is_financial else 'CFO so với LNST đánh giá chất lượng lợi nhuận.')} (theo BCLCTT).</p>
 {CANVAS('chartEQ',label='Chất lượng lợi nhuận CFO vs LNST')}
 <p>P/E raw = {pe_text} (theo BCTC kiểm toán {years[-1]}).{pe_normalized_clause}</p>
 '''
+    valid_peers = [p for p in (D.get('peers') or [])
+                   if isinstance(p.get('x'), (int,float)) and isinstance(p.get('y'), (int,float))]
+    peer_rows = ''.join(
+        f'<tr><td>{p["label"]}{" (chủ thể)" if p.get("own") or p["label"] == t else ""}</td>'
+        f'<td>{p["y"]:.2f}×</td><td>{p["x"]:.2f}× '
+        f'<span class="audit-source" aria-hidden="true">So sánh ngành · vnstock</span></td></tr>'
+        for p in valid_peers
+    )
+    peer_visual = (CANVAS('chartPeerScatter',label='So sánh P/E và P/B cùng ngành')
+                   if len(valid_peers) >= 2 else
+                   '<div class="callout">Chưa đủ ít nhất hai doanh nghiệp có đồng thời P/E và P/B để vẽ biểu đồ so sánh.</div>')
     peer=f'''
-<p>Nhóm peer cùng ngành (theo peer vnstock, theo dữ liệu thị trường) — so sánh định giá {t} với các doanh nghiệp tương đồng. Vốn hóa đạt {int(mcap)} tỷ VND đặt {t} trong nhóm {'ngân hàng lớn' if is_bank else 'doanh nghiệp lớn'} (theo peer vnstock).</p>
-{CANVAS('chartPeerScatter',label='Peer scatter P/E vs P/B')}
-<table class="tbl"><thead><tr><th>Mã</th><th>P/E</th><th>P/B</th></tr></thead>
-<tbody><tr><td>{t} (chủ thể)</td><td>{pe_text}</td><td>{pb_text}</td></tr></tbody></table>
-<p>{t} ở mức {('P/E ' + pe_text if pe_ok else 'P/E không áp dụng — EPS không dương')}{(' và P/B ' + pb_text if pb_ok else '')} — {('ngang hàng hoặc thấp hơn peer median' if pb<1.5 else 'cao hơn peer median') if pb_ok else 'chưa đủ cơ sở so sánh P/B'} (theo peer vnstock). So sánh này giúp định vị định giá tương đối, không phải khuyến nghị (theo disclaimer). Peer data là theo dữ liệu thị trường, cần kiểm chứng thêm (theo peer vnstock).</p>
+<p>So sánh định giá tương đối của {t} với các doanh nghiệp cùng ngành. Vốn hóa hiện tại đạt {int(mcap)} tỷ VND.</p>
+{peer_visual}
+<div class="table-wrap"><table class="fin-table"><thead><tr><th>Mã</th><th>P/E</th><th>P/B</th></tr></thead>
+<tbody>{peer_rows or f'<tr><td>{t} (chủ thể)</td><td>{pe_text}</td><td>{pb_text}</td></tr>'}</tbody></table></div>
+<p>{t} hiện có {('P/E ' + pe_text if pe_ok else 'P/E không áp dụng do EPS không dương')}{(' và P/B ' + pb_text if pb_ok else '')}. Các hệ số trong bảng dùng để định vị tương đối, không phải khuyến nghị.</p>
 '''
     bs=f'''
 <p>Bảng cân đối kế toán {t} năm {years[-1]} (theo BCTC kiểm toán):</p>
-<table class="tbl"><thead><tr><th>Chỉ số</th><th>Giá trị (tỷ VND)</th></tr></thead>
+<div class="table-wrap"><table class="fin-table"><thead><tr><th>Chỉ số</th><th>Giá trị (tỷ VND)</th></tr></thead>
 <tbody>
 <tr><td>Tổng tài sản</td><td>{ft(assets[-1])}</td></tr>
 <tr><td>Vốn chủ sở hữu</td><td>{ft(eq[-1])}</td></tr>
-</tbody></table>
-{CANVAS('chartBSDt',label='Cấu trúc vốn 5 năm')}
+</tbody></table></div>
+{CANVAS('chartCapitalStructure',label='Nợ phải trả và vốn chủ sở hữu 5 năm')}
 <p>{('Định chế tài chính: bỏ qua FCFF/CCC — không áp dụng corporate finance framework. CFO biến động theo hoạt động cấp vốn/tín dụng, không dùng định giá.' if is_financial else 'Capex và dòng tiền xem biểu đồ trên. CFO phản ánh chất lượng lợi nhuận.')} (theo BCLCTT).</p>
 {CANVAS('chartHistCash',label='Dòng tiền hoạt động 5 năm')}
 '''
+    market_level = 'Cao' if abs(max_dd) >= 30 else ('Trung bình' if abs(max_dd) >= 20 else 'Thấp')
+    market_pill = 'h' if market_level == 'Cao' else ('m' if market_level == 'Trung bình' else 'l')
+    cfo_latest = (D.get('cfo') or [None])[-1]
+    if cfo_latest is None:
+        cash_level, cash_pill, cash_signal = 'N/A', 'm', 'Chưa đủ dữ liệu CFO để chấm mức'
+    elif cfo_latest < 0:
+        cash_level, cash_pill, cash_signal = 'Cao', 'h', f'CFO {cfo_latest:.1f} tỷ VND âm'
+    elif cfo_latest < npat_last:
+        cash_level, cash_pill, cash_signal = 'Trung bình', 'm', f'CFO {cfo_latest:.1f} thấp hơn LNST {npat_last:.1f} tỷ VND'
+    else:
+        cash_level, cash_pill, cash_signal = 'Thấp', 'l', f'CFO {cfo_latest:.1f} tỷ VND; LNST {npat_last:.1f} tỷ VND'
+    val_level = 'Cao' if pe_ok and pe > 20 else ('Trung bình' if pe_ok and pe > 15 else ('Thấp' if pe_ok else 'N/A'))
+    val_pill = 'h' if val_level == 'Cao' else ('m' if val_level in ('Trung bình','N/A') else 'l')
+    val_signal = f'P/E {pe_text}' if pe_ok else 'P/E không áp dụng'
     risk=f'''
-<p><strong>Ma trận rủi ro {t}</strong> (theo bối cảnh ngành):</p>
-<ul>
-<li><strong>{('Tín dụng' if is_bank else 'Thị trường')}</strong>: {('nợ xấu, CPL' if is_bank else 'biến động giá')} (theo bối cảnh ngành).</li>
-<li><strong>Thanh khoản</strong>: {('LDR, vốn ngắn hạn' if is_bank else 'dòng tiền')} (theo BCLCTT).</li>
-<li><strong>Biến động</strong>: max drawdown 52 tuần theo vnstock Quote, {max_dd:.1f}% (theo vnstock Quote).</li>
-</ul>
+<p><strong>Ma trận rủi ro {t}</strong></p>
+<div class="table-wrap"><table class="risk-table"><thead><tr><th>Nhóm rủi ro</th><th>Chỉ báo</th><th>Mức</th><th>Cần theo dõi</th></tr></thead><tbody>
+<tr><td>Biến động thị trường</td><td>Mức giảm tối đa 52 tuần {max_dd:.1f}%</td><td><span class="pill pill-{market_pill}">{market_level}</span></td><td>Khoảng cách tới vùng thấp/cao 52 tuần</td></tr>
+<tr><td>Chất lượng dòng tiền</td><td>{cash_signal}</td><td><span class="pill pill-{cash_pill}">{cash_level}</span></td><td>{'Chất lượng tài sản và thanh khoản' if is_financial else 'CFO so với lợi nhuận và nhu cầu vốn lưu động'}</td></tr>
+<tr><td>Định giá</td><td>{val_signal}; P/B {pb_text}</td><td><span class="pill pill-{val_pill}">{val_level}</span></td><td>Biến động EPS, BVPS và hệ số thị trường</td></tr>
+</tbody></table></div>
 '''
     caplens=f'''
 <p><strong>Góc nhìn khoản đầu tư</strong> (ba mức, không khuyến nghị):</p>
@@ -877,21 +1005,23 @@ def render(D,cagr,npat_growth,roe_hist,cp_back,cp_consistent,graham,pe5med,news)
 <li>{'✔️' if pe_ok and pe<15 else '⚠️'} P/E {pe_text} — {('hợp lý' if pe<15 else 'cao') if pe_ok else 'không áp dụng khi EPS không dương'} (theo vnstock Quote, giá {fv(price)} VND).</li>
 <li>{'✔️' if pb_ok and pb<1.5 else '⚠️'} P/B {pb_text} — {('dưới 1,5' if pb<1.5 else 'trên 1,5') if pb_ok else 'không áp dụng khi BVPS không dương'} (theo vnstock Quote).</li>
 <li>{'✔️' if roe_last>12 else '⚠️'} ROE {roe_last:.1f}% — {'trên 12%' if roe_last>12 else 'dưới 12%'} (theo BCTC kiểm toán).</li>
-<li>{'✔️' if score>=0 else '⚠️'} Tech Score {score:+d} — {verdict_label} (theo vnstock Quote, MA/RSI/MACD).</li>
+<li>{'✔️' if score>=0 else '⚠️'} Điểm kỹ thuật {score:+d} · {verdict_label} (theo vnstock Quote, MA/RSI/MACD).</li>
 <li>⚠️ Rủi ro {('nợ xấu' if is_bank else 'biến động')} — theo dõi định kỳ (theo bối cảnh ngành).</li>
 </ul>
-<p class="faint meta-note">Đây là checklist tự đánh giá dựa trên data công khai (theo disclaimer), không thay thế tư vấn tài chính cá nhân. Mọi số liệu có nguồn BCTC kiểm toán hoặc vnstock Quote.</p>
+<p class="faint meta-note">Checklist hỗ trợ rà soát nhanh, không thay thế tư vấn tài chính cá nhân.</p>
 '''
-    insight1=f'''<div class="card insight"><h3>★ Insight 1 — Chu kỳ lợi nhuận {t} (FY{years[0]}–FY{years[-1]})</h3>
+    insight1=f'''<div class="card insight"><h3>Chu kỳ lợi nhuận {t} (FY{years[0]}–FY{years[-1]})</h3>
 <p>Theo BCTC kiểm toán năm {years[-1]}, lợi nhuận sau thuế {t} đạt {ft(npat_last)} tỷ VND (theo BCTC kiểm toán năm {years[-1]}).</p>
 <p>EPS năm {years[-1]} đạt {fv(eps_last)} VND/cp (theo BCTC kiểm toán năm {years[-1]}).</p>
 <p>Vốn chủ sở hữu năm {years[-1]} đạt {ft(eq[-1])} tỷ VND (theo BCTC kiểm toán năm {years[-1]}).</p>
 <p>Tổng tài sản năm {years[-1]} đạt {ft(assets[-1])} tỷ VND (theo BCTC kiểm toán năm {years[-1]}).</p>
+<p>Trong toàn giai đoạn, lợi nhuận sau thuế thay đổi {npat_growth:+.1f}% từ mức {ft(npat_first)} tỷ VND. Diễn biến này cần được đọc cùng tốc độ tăng vốn chủ sở hữu để phân biệt tăng trưởng thực chất với tăng trưởng dựa chủ yếu vào mở rộng quy mô vốn.</p>
+<p>ROE cuối kỳ ở mức {roe_last:.1f}%. Một chu kỳ lợi nhuận bền vững đòi hỏi doanh thu, lợi nhuận và hiệu quả sử dụng vốn cùng cải thiện; chỉ một năm tăng mạnh chưa đủ xác nhận xu hướng dài hạn.</p>
 <p>{t} là {('ngân hàng nhạy cảm chu kỳ kinh tế và chính sách tín dụng của NHNN' if is_bank else 'doanh nghiệp nhạy cảm chu kỳ kinh doanh')} (theo bối cảnh ngành).</p>
-<p>Nhà đầu tư 1–3 năm cần theo dõi {('CPL, tỷ lệ nợ xấu, room tín dụng hàng năm' if is_bank else 'KQKD hàng quý, biên lợi nhuận')} (theo BCTC kiểm toán).</p>
+<p>Nhà đầu tư 1–3 năm cần theo dõi {('chi phí lãi, tỷ lệ nợ xấu và hạn mức tín dụng hàng năm' if is_bank else 'kết quả kinh doanh hàng quý và biên lợi nhuận')} (theo BCTC kiểm toán).</p>
 <p>Đây là bằng chứng đầu tư, không phải khuyến nghị mua/bán — quyết định cần kết hợp dung sai rủi ro cá nhân (theo disclaimer).</p>
 </div>'''
-    insight2=f'''<div class="card insight"><h3>★ Insight 2 — Định giá P/B và vị thế cạnh tranh</h3>
+    insight2=f'''<div class="card insight"><h3>Định giá P/B và vị thế cạnh tranh</h3>
 <p>P/B hiện của {t} là {pb_text} (theo vnstock Quote, giá {fv(price)} VND).</p>
 <p>BVPS năm {years[-1]} đạt {fv(bvps[-1]) if bvps else "n/a"} VND (theo BCTC kiểm toán năm {years[-1]}).</p>
 <p>{('Định chế tài chính: P/B + ROE là trọng tâm; không dùng FCFF/WACC/Graham kiểu công nghiệp.' if is_financial else 'Định giá hội tụ nhiều phương pháp: P/E, P/B, Graham Number.')}</p>
@@ -899,70 +1029,122 @@ def render(D,cagr,npat_growth,roe_hist,cp_back,cp_consistent,graham,pe5med,news)
 <p>EPS năm {years[-1]} đạt {fv(eps_last)} VND/cp (theo BCTC kiểm toán năm {years[-1]}).</p>
 {('' if is_financial else '<p>Graham Number: ' + (graham_text + ' VND (theo vnstock Quote, √(22.5×EPS×BVPS)).' if graham_ok else 'N/A — không áp dụng khi EPS hoặc BVPS không dương (theo BCTC kiểm toán).') + '</p>')}
 <p>{t} giao dịch ở mức định giá {(('hợp lý cho mô hình ngân hàng bán lẻ' if pb<1.5 else 'đầy đủ') if pb_ok else 'chưa xác định do BVPS không dương')} (theo peer vnstock).</p>
+<p>Khi sử dụng P/B, cần đọc đồng thời ROE, chất lượng tài sản và khả năng duy trì vốn chủ sở hữu; một hệ số đơn lẻ không đủ để kết luận về mức hấp dẫn.</p>
 <p>Bằng chứng đầu tư, không khuyến nghị giao dịch (theo disclaimer).</p>
 </div>'''
-    insight3=f'''<div class="card insight"><h3>★ Insight 3 — Rủi ro drawdown và biến động giá</h3>
-<p>Theo vnstock Quote, {t} có max drawdown 52 tuần theo vnstock Quote, {max_dd:.1f}% (theo vnstock Quote).</p>
-<p>Tech Score đạt {score:+d} — {verdict_label} dựa trên MA10/20/50 trend, RSI14, MACD (theo vnstock Quote).</p>
+    insight3=f'''<div class="card insight"><h3>Rủi ro giảm giá và biến động</h3>
+<p>Trong 52 tuần, {t} có mức giảm tối đa {max_dd:.1f}% (theo vnstock Quote).</p>
+<p>Điểm kỹ thuật đạt {score:+d} · {verdict_label}, tổng hợp từ xu hướng MA10/20/50, RSI14 và MACD (theo vnstock Quote).</p>
 <p>RSI14 đạt {D["rsi14"]:.1f} (theo vnstock Quote).</p>
 <p>MA10 đạt {fv(D['techMA10'])} VND; MA20 đạt {fv(D['techMA20'])} VND; MA50 đạt {fv(D['techMA50'])} VND (theo vnstock Quote).</p>
-<p>52-week High đạt {fv(D['tech52wHigh'])} VND; Low đạt {fv(D['tech52wLow'])} VND (theo vnstock Quote).</p>
+<p>Giá cao nhất 52 tuần đạt {fv(D['tech52wHigh'])} VND; giá thấp nhất đạt {fv(D['tech52wLow'])} VND (theo vnstock Quote).</p>
 <p>Hỗ trợ đạt {fv(price*0.92)} VND; Kháng cự đạt {fv(price*1.08)} VND (theo vnstock Quote).</p>
 <p>Nhà đầu tư 1–3 năm cần chuẩn bị dung sai cho biến động giá — không nên đánh giá chất lượng doanh nghiệp chỉ qua giá cổ phiếu ngắn hạn (theo disclaimer).</p>
 <p>Đây là bằng chứng đầu tư, không phải lời khuyên mua/bán cụ thể — nhà đầu tư tự chịu trách nhiệm (theo disclaimer).</p>
 </div>'''
     tech_html=f'''
 <p><strong>Phân tích kỹ thuật {t}</strong> (theo vnstock Quote, giá {fv(price)} VND):</p>
-<p><strong>Tech Score {score:+d} — {verdict}</strong> (nhãn kỹ thuật máy đọc {verdict}, KHÔNG phải khuyến nghị — theo vnstock Quote, MA/RSI/MACD weekly 52 tuần).</p>
+<p><strong>Điểm kỹ thuật {score:+d} · {verdict_label}</strong>. Đây là trạng thái tổng hợp từ MA, RSI và MACD theo tuần trong 52 tuần, không phải khuyến nghị giao dịch.</p>
 <ul>
 <li>MA10: {fv(D['techMA10'])} VND; MA20: {fv(D['techMA20'])} VND; MA50: {fv(D['techMA50'])} VND (theo vnstock Quote).</li>
-<li>52-week High: {fv(D['tech52wHigh'])} VND; Low: {fv(D['tech52wLow'])} VND (theo vnstock Quote).</li>
-<li>RSI14: {D['rsi14']:.1f}; MACD: {fv(D.get('macd',0))} (theo vnstock Quote).</li>
-<li>Max drawdown 52 tuần theo vnstock Quote, {max_dd:.1f}% (theo vnstock Quote).</li>
+<li>Giá cao nhất 52 tuần: {fv(D['tech52wHigh'])} VND; giá thấp nhất: {fv(D['tech52wLow'])} VND (theo vnstock Quote).</li>
+<li>RSI14: {D['rsi14']:.1f}; MACD: {fv(D.get('macd'))} (theo vnstock Quote).</li>
+<li>Mức giảm tối đa 52 tuần: {max_dd:.1f}% (theo vnstock Quote).</li>
 </ul>
 {CANVAS('chartTechPrice',label='Giá và MA 52 tuần')}\n{CANVAS('chartTechRSI',h=200,label='RSI 14')}
 <p><strong>Hỗ trợ/Kháng cự</strong>: Hỗ trợ ~{fv(price*0.92)} VND, Kháng cự ~{fv(price*1.08)} VND (theo vnstock Quote).</p>
 '''
     profile=f'''
-<p><strong>Profile kỹ thuật {t}</strong>: nhãn kỹ thuật {verdict} (máy đọc, không phải khuyến nghị — theo vnstock Quote). Drawdown hàng tháng và phân phối weekly returns phản ánh tính thanh khoản (theo vnstock Quote).</p>
+<p><strong>Hồ sơ biến động giá {t}</strong>: trạng thái hiện tại là {verdict_label}. Mức giảm theo tháng và phân phối lợi suất tuần cho biết biên độ dao động, không phải khuyến nghị giao dịch.</p>
 {CANVAS('chartProfileDD',h=240,label='Drawdown hàng tháng')}
-{CANVAS('chartProfileDist',h=240,label='Phân phối weekly returns')}
+{CANVAS('chartProfileDist',h=240,label='Phân phối lợi suất tuần')}
 {CANVAS('chartReturns',h=240,label='Lợi suất tích lũy')}
 '''
     # News section (REQ-008)
     if news and news.get('articles'):
         news_count=len(news['articles'])
+        sentiment_counts={key:sum(1 for article in news['articles'] if article.get('sentiment')==key)
+                          for key in ('positive','negative','neutral')}
+        headline_items=[]
+        for article in news['articles'][:5]:
+            title=html_lib.escape(str(article.get('title') or 'Tin tức doanh nghiệp'))
+            date=html_lib.escape(str(article.get('date') or ''))
+            url=str(article.get('url') or '')
+            headline=(f'<a href="{html_lib.escape(url,quote=True)}" target="_blank" rel="noopener noreferrer">{title}</a>'
+                      if url.startswith(('https://','http://')) else title)
+            headline_items.append(f'<li><strong>{date}</strong> — {headline}</li>')
         news_html=f'''
-<p><strong>News digest 30 ngày</strong> — {news_count} bài (theo vnstock Company.news nguồn {news.get('provider','KBS')}, fetched {news.get('fetched_at',datetime.now().date().isoformat())}):</p>
+<p><strong>Tóm tắt tin tức 30 ngày</strong> — {news_count} bài, cập nhật {news.get('fetched_at',datetime.now().date().isoformat())}:</p>
 <ul>
-<li>Sentiment: positive {news.get("sentiment",{}).get("positive",0)}, negative {news.get("sentiment",{}).get("negative",0)}, neutral {news.get("sentiment",{}).get("neutral",0)} (theo vnstock Company.news).</li>
-<li>Category breakdown: general (theo vnstock Company.news).</li>
+<li>Phân loại nội dung tin: tích cực {sentiment_counts['positive']}, tiêu cực {sentiment_counts['negative']}, trung tính {sentiment_counts['neutral']}.</li>
 </ul>
-<p>News sentiment ảnh hưởng định giá ngắn hạn nhưng không thay thế phân tích cơ bản (theo BCTC kiểm toán).</p>
+<ol class="news-list">{''.join(headline_items)}</ol>
+<p>Tin tức hỗ trợ theo dõi diễn biến ngắn hạn, không thay thế phân tích cơ bản.</p>
 '''
     else:
         news_html=f'''
-<p><strong>News digest 30 ngày</strong>: {('không có bài mới trong kết quả API' if news and news.get('fetch_status') == 'ok_empty' else 'không fetch được news do lỗi API')} (theo vnstock Company.news nguồn {news.get('provider','KBS') if news else 'KBS'}, fetched {news.get('fetched_at') if news else datetime.now().date().isoformat()}). Báo cáo này dựa trên BCTC kiểm toán và vnstock Quote, không suy diễn sentiment tin tức.</p>
+<div class="callout"><strong>{('Không có tin mới trong 30 ngày' if news and news.get('fetch_status') == 'ok_empty' else 'Chưa có dữ liệu tin tức khả dụng')}</strong>. Cập nhật {news.get('fetched_at') if news else datetime.now().date().isoformat()}; không suy diễn sắc thái tin khi thiếu dữ liệu.</div>
+<ul>
+<li>Không có tiêu đề đủ điều kiện trong cửa sổ 30 ngày để đưa vào báo cáo.</li>
+<li>Trạng thái này không đồng nghĩa doanh nghiệp không có sự kiện; người đọc nên kiểm tra công bố thông tin chính thức khi cần quyết định.</li>
+</ul>
+<p>Phần tin tức chỉ bổ sung bối cảnh ngắn hạn và không thay thế số liệu tài chính hoặc đánh giá rủi ro.</p>
 '''
-    analyst=f'''<p>Báo cáo này được biên soạn bởi ZCode equity-research-vn — skill phân tích chứng khoán Việt Nam trên nền ZCode. Dữ liệu tài chính từ sponsor vnstock_data (VCI, tier golden), giá từ vnstock Quote API, technical từ price weekly 52 tuần (theo vnstock Quote và BCTC kiểm toán).</p><p><strong>Disclaimer</strong>: Đây là by evidence pack — bằng chứng đầu tư, <strong>không phải khuyến nghị mua/bán</strong>. Mọi quyết định đầu tư là trách nhiệm của nhà đầu tư cá nhân, nên kết hợp dung sai rủi ro và tư vấn tài chính chuyên nghiệp (theo disclaimer). Số liệu trong báo cáo  bị thay đổi theo dữ liệu mới nhất từ nguồn (theo vnstock Quote và BCTC kiểm toán).</p>'''
-    glossary=f'''<p><strong>Thuát ngữ</strong> (theo hồ sơ công ty): P/E = giá/EPS (theo vnstock Quote). P/B = giá/BVPS (theo vnstock Quote). ROE = lợi nhuận/vốn CSH (theo BCTC kiểm toán). EPS = lợi nhuận/cổ phiếu (theo BCTC kiểm toán). CAGR = tăng trưởng kép (theo BCTC kiểm toán). {rev_label} = {('tổng thu nhập hoạt động' if is_financial else 'doanh thu thuần')} (theo hồ sơ công ty).</p>'''
-    source=f'''<p><strong>Nguồn dữ liệu</strong> (theo vnstock Quote và BCTC kiểm toán):</p>
+    if is_financial:
+        analyst_support_3 = f'Định chế tài chính được đánh giá trọng tâm qua ROE và P/B {pb_text} (theo vnstock Quote).'
+        analyst_caution_2 = 'Cần theo dõi chất lượng tài sản, an toàn vốn và biến động thu nhập tài chính (theo bối cảnh ngành).'
+    elif cfo_latest is not None and cfo_latest >= npat_last:
+        analyst_support_3 = cash_signal + ' (theo BCLCTT).'
+        analyst_caution_2 = 'Dòng tiền hiện hỗ trợ lợi nhuận, nhưng vẫn cần theo dõi nhu cầu vốn lưu động và Capex trong các kỳ tiếp theo (theo BCLCTT).'
+    else:
+        analyst_support_3 = f'Vốn chủ sở hữu năm {years[-1]} đạt {ft(eq[-1])} tỷ VND (theo BCTC kiểm toán).'
+        analyst_caution_2 = ('CFO kỳ gần nhất chưa đủ dữ liệu để kết luận chất lượng lợi nhuận (theo BCLCTT).'
+                              if cfo_latest is None else cash_signal + ' (theo BCLCTT).')
+    analyst=f'''
+<div class="thesis-grid">
+  <article class="card">
+    <h3>Yếu tố hỗ trợ</h3>
+    <ul>
+      <li>{rev_label} năm {years[-1]} đạt {ft(rev_last)} tỷ VND; CAGR doanh thu FY{years[0]}–FY{years[-1]} là {cagr_text} (theo BCTC kiểm toán).</li>
+      <li>LNST năm {years[-1]} đạt {ft(npat_last)} tỷ VND; ROE đạt {roe_last:.1f}% (theo BCTC kiểm toán).</li>
+      <li>{analyst_support_3}</li>
+      <li>{('P/E ' + pe_text + '; ' if pe_ok else 'P/E không áp dụng; ')}P/B {pb_text} — dùng để đối chiếu tương đối, không phải giá mục tiêu (theo vnstock Quote).</li>
+    </ul>
+  </article>
+  <article class="card">
+    <h3>Yếu tố cần thận trọng</h3>
+    <ul>
+      <li>Mức giảm tối đa 52 tuần là {max_dd:.1f}%, cho thấy biên độ giảm giá đã từng đáng kể (theo vnstock Quote).</li>
+      <li>{analyst_caution_2}</li>
+      <li>Tín hiệu kỹ thuật hiện ở trạng thái {verdict_label}, điểm {score:+d}; đây chỉ là trạng thái dữ liệu tại thời điểm báo cáo (theo vnstock Quote).</li>
+      <li>Số liệu định giá nhạy với thay đổi của EPS, BVPS và giá thị trường.</li>
+    </ul>
+  </article>
+</div>
+<div class="callout"><strong>Kết luận cân bằng:</strong> các yếu tố hỗ trợ và rủi ro cần được đọc đồng thời; phần này không tự động chuyển thành quyết định mua hoặc bán.</div>
+'''
+    glossary=f'''<p><strong>Thuật ngữ:</strong> P/E = giá/EPS. P/B = giá/BVPS. ROE = lợi nhuận/vốn chủ sở hữu. EPS = lợi nhuận trên mỗi cổ phiếu. CAGR = tốc độ tăng trưởng kép. {rev_label} = {('tổng thu nhập hoạt động' if is_financial else 'doanh thu thuần')}.</p>'''
+    source=f'''<p><strong>Nguồn dữ liệu và phương pháp</strong></p>
 <ol class="ref-list">
-<li id="ref-1"><strong>[ref-1]</strong> Sponsor vnstock_data (VCI) — {cn}, 42 kỳ BCTC (theo BCTC kiểm toán).</li>
-<li id="ref-2"><strong>[ref-2]</strong> BCTC kiểm toán {t} (sponsor vnstock_data VCI, 42 kỳ).</li>
-<li id="ref-3"><strong>[ref-3]</strong> Định giá — P/E {pe_text}, P/B {pb_text}{('' if is_financial else ', Graham ' + (graham_text + ' VND' if graham_ok else 'N/A — không áp dụng khi EPS/BVPS không dương'))}, giá {fv(price)} VND (theo vnstock Quote).</li>
-<li id="ref-4"><strong>[ref-4]</strong> Dữ liệu giá vnstock Quote — giá {fv(price)} VND, max drawdown {max_dd:.1f}%, MA/RSI/MACD, Tech Score {score:+d} (theo vnstock Quote).</li>
-<li id="ref-5"><strong>[ref-5]</strong> Disclaimer — by evidence pack, không khuyến nghị mua/bán (theo disclaimer).</li>
-<li id="ref-6"><strong>[ref-6]</strong> Báo cáo lưu chuyển tiền tệ {t} — CFO (theo BCLCTT).</li>
-<li id="ref-7"><strong>[ref-7]</strong> Bối cảnh ngành — {('ngân hàng VN, điều tiết NHNN' if is_bank else SECTOR)} (theo bối cảnh ngành).</li>
-<li id="ref-8"><strong>[ref-8]</strong> Peer comparison — advisory estimate (theo peer vnstock).</li>
-<li id="ref-9"><strong>[ref-9]</strong> Cơ cấu doanh thu ước tính (theo hồ sơ công ty).</li>
-<li id="ref-10"><strong>[ref-10]</strong> {('Định giá định chế tài chính — P/B, ROE / cost-of-equity (theo bối cảnh ngành).' if is_financial else 'WACC ước tính — Rf 3,25%, ERP 7,5%, g 2,5% (theo WACC ước tính).')}</li>
+<li id="ref-1"><strong>[ref-1]</strong> Dữ liệu báo cáo tài chính cấu trúc từ VCI — {cn}, tối đa 42 kỳ.</li>
+<li id="ref-2"><strong>[ref-2]</strong> Báo cáo tài chính lịch sử của {t}; các năm hiển thị được chọn từ kỳ hoàn chỉnh gần nhất.</li>
+<li id="ref-3"><strong>[ref-3]</strong> Dữ liệu định giá — P/E {pe_text}, P/B {pb_text}{('' if is_financial else ', Graham ' + (graham_text + ' VND' if graham_ok else 'N/A — không áp dụng khi EPS/BVPS không dương'))}, giá {fv(price)} VND.</li>
+<li id="ref-4"><strong>[ref-4]</strong> Dữ liệu giá thị trường — giá {fv(price)} VND, mức giảm tối đa {max_dd:.1f}%, MA/RSI/MACD và điểm kỹ thuật {score:+d}.</li>
+<li id="ref-5"><strong>[ref-5]</strong> Báo cáo phục vụ nghiên cứu, không phải khuyến nghị mua hoặc bán.</li>
+<li id="ref-6"><strong>[ref-6]</strong> Báo cáo lưu chuyển tiền tệ của {t} — dòng tiền hoạt động.</li>
+<li id="ref-7"><strong>[ref-7]</strong> Bối cảnh ngành — {('ngân hàng Việt Nam và điều tiết của NHNN' if is_bank else sector_label)}.</li>
+<li id="ref-8"><strong>[ref-8]</strong> Dữ liệu so sánh các doanh nghiệp cùng ngành.</li>
+<li id="ref-9"><strong>[ref-9]</strong> Cơ cấu hoạt động chỉ hiển thị khi nguồn có dữ liệu phân khúc đủ điều kiện.</li>
+<li id="ref-10"><strong>[ref-10]</strong> {('Định giá định chế tài chính — P/B, ROE và chi phí vốn chủ sở hữu.' if is_financial else 'Giả định định giá — Rf 3,0–3,5%, ERP 7–8%, tăng trưởng dài hạn 2–3%.')}</li>
 </ol>
 '''
-    subs={'TICKER':t,'COMPANY_NAME':cn,'EXCHANGE':(D.get('exchange') or '—'),'PRICE_DATE':(D.get('as_of_date') or '—'),'CAPITAL_LENS_AMOUNT':'(ba mức)','CITATION_COUNT':'10','SOURCES_SUMMARY':src,'THESIS_CAPEX_DATA':json.dumps(capex_arr),'THESIS_CAPEX_LABELS':json.dumps([str(y) for y in years]),
-        'INSIGHT_1_SUBTITLE':f'Chu kỳ LN FY{years[0]}–{years[-1]}','INSIGHT_2_SUBTITLE':'Định giá P/B','INSIGHT_3_SUBTITLE':'Drawdown',
-        'INSIGHT_1_SHORT_LABEL':'Chu kỳ LN','INSIGHT_2_SHORT_LABEL':'Định giá','INSIGHT_3_SHORT_LABEL':'Drawdown',
+    subs={'TICKER':t,'COMPANY_NAME':cn,'HERO_TITLE':hero_title,'EXCHANGE':(D.get('exchange') or '—'),'PRICE_DATE':(D.get('as_of_date') or '—'),'CAPITAL_LENS_AMOUNT':'(ba mức)',
+        'HISTORY_START_YEAR':str(years[0]),'HISTORY_END_YEAR':str(years[-1]),
+        'BS_SECTION_TITLE':('Cân đối kế toán và chất lượng tài sản' if is_financial
+                            else 'Cân đối kế toán, Capex và dòng tiền'),
+        'THESIS_CAPEX_DATA':json.dumps(capex_arr),'THESIS_CAPEX_LABELS':json.dumps([str(y) for y in years]),
+        'INSIGHT_1_SUBTITLE':f'Chu kỳ lợi nhuận FY{years[0]}–{years[-1]}','INSIGHT_2_SUBTITLE':'Định giá P/B','INSIGHT_3_SUBTITLE':'Biến động giá',
+        'INSIGHT_1_SHORT_LABEL':'Chu kỳ lợi nhuận','INSIGHT_2_SHORT_LABEL':'Định giá','INSIGHT_3_SHORT_LABEL':'Biến động',
         'SEC_HERO_HTML':hero,'SEC_EXEC_HTML':exec_html,'SEC_BIZ_HTML':biz,'SEC_INDUSTRY_HTML':industry,
         'SEC_HISTORY_HTML':history,'SEC_SEGMENT_HTML':seg,'SEC_ANALYTICS_HTML':analytics,'SEC_THESIS_HTML':thesis,'SEC_VALUATION_HTML':valuation,
         'SEC_PEER_HTML':peer,'SEC_BS_HTML':bs,'SEC_RISK_HTML':risk,'SEC_CAPITAL_LENS_HTML':caplens,
@@ -971,11 +1153,16 @@ def render(D,cagr,npat_growth,roe_hist,cp_back,cp_consistent,graham,pe5med,news)
         'SEC_INSIGHT_1_HTML':insight1,'SEC_INSIGHT_2_HTML':insight2,'SEC_INSIGHT_3_HTML':insight3,
         'CHART_DATA_JS':'const DATA = '+json.dumps(D,ensure_ascii=False,indent=2)+';'}
     tmpl=open(TEMPLATE).read()
-    tmpl=tmpl.replace('KDH',t)
     # Strip template trailing developer notes (contain DATA.xxx literal → REQ-069 false positive)
     tmpl=re.sub(r'<!--.*?-->', '', tmpl, flags=re.DOTALL)
     tmpl=re.sub(r'Đừng hardcode.*?(?=\n|$)', '', tmpl)
     for k,v in subs.items(): tmpl=tmpl.replace('{{'+k+'}}',v)
+    tmpl=clean_reader_provenance(tmpl)
+    # Bổ sung semantic table mà không thay đổi nội dung hoặc cấu trúc dữ liệu.
+    tmpl=re.sub(r'<th(?![^>]*\bscope=)', '<th scope="col"', tmpl)
+    tmpl=re.sub(r'<table class="(fin-table|risk-table)"(?![^>]*\baria-label=)',
+                r'<table class="\1" aria-label="Bảng dữ liệu phân tích"', tmpl)
+    tmpl=tmpl.replace('fetched ', 'cập nhật ')
     # dedup canvas (template has SEC_* twice)
     seen=set()
     def dedup(m):
@@ -1025,6 +1212,30 @@ try:
         # 100% — tránh lệch do làm tròn khi tính lại từ financials.json).
         D = json.load(open(reuse_file)); D['sector'] = SECTOR
         D['_provenance']['sector'] = SECTOR
+        def reuse_moving_average(values, window):
+            result=[]
+            for index in range(len(values)):
+                chunk=[float(v) for v in values[max(0,index-window+1):index+1] if isinstance(v,(int,float)) and math.isfinite(float(v))]
+                result.append(round(sum(chunk)/len(chunk), 0) if chunk else None)
+            return result
+        tech_price = D.get('techPrice') or []
+        D['techMA10Series'] = D.get('techMA10Series') or reuse_moving_average(tech_price, 10)
+        D['techMA20Series'] = D.get('techMA20Series') or D.get('techMA20val') or reuse_moving_average(tech_price, 20)
+        D['techMA50Series'] = D.get('techMA50Series') or D.get('techMA50val') or reuse_moving_average(tech_price, 50)
+        if not D.get('returnIndex'):
+            cumulative=1.0; return_index=[]
+            for weekly_return in (D.get('ret1w') or []):
+                cumulative *= 1 + float(weekly_return or 0) / 100
+                return_index.append(round((cumulative-1)*100,1))
+            D['returnIndex']=return_index
+        if not isinstance(D.get('segMix'),dict):
+            D['segMix']={'labels':[],'values':[]}
+        technical_path=f'{WORK}/technical_active.json'
+        technical_payload=json.load(open(technical_path)) if os.path.exists(technical_path) else {}
+        D['macd']=D.get('macd',technical_payload.get('macd'))
+        D['macd_signal']=D.get('macd_signal',technical_payload.get('macd_signal'))
+        D['bb_lower']=D.get('bb_lower',technical_payload.get('bb_lower'))
+        D['bb_upper']=D.get('bb_upper',technical_payload.get('bb_upper'))
         years = D.get('years') or sorted(int(y) for y in json.load(open(f'{WORK}/data/financials.json'))['revenue_ty'].keys() if str(y).isdigit())
         cagr = D.get('cagr')
         npat_growth = D.get('npat_growth') or 0
